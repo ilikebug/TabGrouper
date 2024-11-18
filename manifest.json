@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Bookmarks Tools",
+  "version": "1.0",
+  "description": "Quickly find and open bookmarks.",
+  "permissions": [
+    "bookmarks",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "open-search-box": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Z",
+        "mac": "Command+Shift+Z"
+      },
+      "description": "Open the search box"
+    }
+  },
+  "action": {
+    "default_popup": "popup/popup.html"
+  }
+}
