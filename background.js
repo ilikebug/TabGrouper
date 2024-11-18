@@ -1,7 +1,8 @@
 chrome.commands.onCommand.addListener((command) => {
   if (command === "open-search-box") {
     chrome.tabs.query({}, (alltabs) => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      chrome.tabs.query({ currentWindow: true, active: true }, (tabs) => {
+        console.log(tabs);
         if (tabs.length > 0) {
           chrome.bookmarks.getTree((bookmarkTreeNodes) => {
             chrome.scripting
@@ -25,6 +26,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 function toggleSearchBox(bookmarkTreeNodes, alltabs) {
+  console.log(alltabs);
   const existingBox = document.getElementById("custom-search-box");
   if (existingBox) {
     existingBox.remove();

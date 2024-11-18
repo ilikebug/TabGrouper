@@ -9,10 +9,6 @@
     "scripting",
     "tabs"
   ],
-  "host_permissions": [
-    "http://*/*",
-    "https://*/*"
-  ],
   "background": {
     "service_worker": "background.js"
   },
@@ -25,6 +21,9 @@
       "description": "Open the search box"
     }
   },
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "action": {
     "default_popup": "popup/popup.html"
   }
