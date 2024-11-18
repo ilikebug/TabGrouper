@@ -1,22 +1,30 @@
 chrome.commands.onCommand.addListener((command) => {
   if (command === "open-search-box") {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs.length > 0) {
-        chrome.bookmarks.getTree((bookmarkTreeNodes) => {
-          chrome.scripting
-            .executeScript({
-              target: { tabId: tabs[0].id },
-              function: toggleSearchBox,
-              args: [bookmarkTreeNodes],
-            })
-            .catch((error) => console.error("Script execution error:", error));
-        });
-      }
+    chrome.tabs.query({}, (alltabs) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs.length > 0) {
+          chrome.bookmarks.getTree((bookmarkTreeNodes) => {
+            chrome.scripting
+              .executeScript({
+                target: { tabId: tabs[0].id },
+                function: toggleSearchBox,
+                args: [bookmarkTreeNodes, alltabs],
+              })
+              .catch((error) => console.log("Script execution error:", error));
+          });
+        }
+      });
     });
   }
 });
 
-function toggleSearchBox(bookmarkTreeNodes) {
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === "activateTab") {
+    chrome.tabs.update(request.tabId, { active: true });
+  }
+});
+
+function toggleSearchBox(bookmarkTreeNodes, alltabs) {
   const existingBox = document.getElementById("custom-search-box");
   if (existingBox) {
     existingBox.remove();
@@ -24,81 +32,125 @@ function toggleSearchBox(bookmarkTreeNodes) {
     const createSearchBox = () => {
       const searchBox = document.createElement("div");
       searchBox.id = "custom-search-box";
-      searchBox.style.position = "fixed";
-      searchBox.style.top = "40%";
-      searchBox.style.left = "50%";
-      searchBox.style.transform = "translate(-50%, -50%)";
-      searchBox.style.zIndex = "10000";
-      searchBox.style.backgroundColor = "rgba(249, 249, 249, 0.8)";
-      searchBox.style.border = "1px solid #ccc";
-      searchBox.style.borderRadius = "8px";
-      searchBox.style.padding = "15px";
-      searchBox.style.boxShadow = "0 4px 8px rgba(0,0,0,0.2)";
-      searchBox.style.width = "30%";
-      searchBox.style.maxHeight = "50%";
-      searchBox.style.overflowY = "auto";
+      const shadow = searchBox.attachShadow({ mode: "open" });
+
+      const style = document.createElement("style");
+      style.textContent = `
+        #container {
+          position: fixed;
+          top: 40%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          z-index: 10000;
+          background-color: rgba(249, 249, 249, 0.9);
+          border: 1px solid #ccc;
+          border-radius: 12px;
+          padding: 20px;
+          box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+          width: 50%;
+          height: 50%;
+          display: flex;
+          font-family: sans-serif;
+          font-size: 14px;
+        }
+        #lists {
+          display: flex;
+          flex-direction: row;
+          flex: 1;
+          overflow: auto;
+          flex-direction: column;
+        }
+        input {
+          width: 100%;
+          padding: 12px;
+          border: 1px solid #ddd;
+          border-radius: 6px;
+          box-sizing: border-box;
+          background-color: rgba(255, 255, 255, 0);
+          margin-bottom: 15px;
+        }
+        ul {
+          list-style-type: none;
+          padding: 0;
+          margin: 0;
+          max-height: 100%;
+          overflow-y: auto;
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+        }
+        a {
+          display: flex;
+          align-items: center;
+          padding: 5px 0;
+          color: #000;
+          text-decoration: none;
+          border-bottom: 1px solid #ddd;
+        }
+        img {
+          width: 16px;
+          height: 16px;
+          margin-right: 5px;
+        }
+      `;
+
+      const container = document.createElement("div");
+      container.id = "container";
 
       const input = document.createElement("input");
       input.type = "text";
       input.placeholder = "Search...";
-      input.style.width = "100%";
-      input.style.padding = "10px";
-      input.style.border = "1px solid #ddd";
-      input.style.borderRadius = "4px";
-      input.style.boxSizing = "border-box";
-      input.style.backgroundColor = "rgba(249, 249, 249, 0.8)";
+
+      const listsContainer = document.createElement("div");
+      listsContainer.id = "lists";
 
       const bookmarkList = document.createElement("ul");
-      bookmarkList.style.listStyleType = "none";
-      bookmarkList.style.padding = "0";
-      bookmarkList.style.marginTop = "10px";
-      bookmarkList.style.maxHeight = "50%";
-      bookmarkList.style.overflowY = "auto";
+      const tabList = document.createElement("ul");
+      tabList.style.marginLeft = "20px";
 
-      let currentIndex = -1; // 当前选中的书签索引
+      const groupTabsByHost = (tabs) => {
+        const groupedTabs = {};
+        tabs.forEach((tab) => {
+          try {
+            const url = new URL(tab.url);
+            const host = url.hostname;
+            if (!groupedTabs[host]) {
+              groupedTabs[host] = [];
+            }
+            groupedTabs[host].push(tab);
+          } catch (e) {
+            console.error("Invalid URL:", tab.url);
+          }
+        });
+        return groupedTabs;
+      };
 
-      const displayBookmarks = (nodes, parentElement) => {
-        nodes.forEach((node) => {
-          const listItem = document.createElement("li");
-          if (node.children) {
-            // 处理文件夹
-            const folderTitle = document.createElement("span");
-            folderTitle.style.display = "flex";
-            folderTitle.style.alignItems = "center";
+      const displayGroupedTabs = (groupedTabs, parentElement) => {
+        Object.keys(groupedTabs).forEach((host) => {
+          const hostItem = document.createElement("li");
+          const hostTitle = document.createElement("span");
+          hostTitle.textContent = host;
+          hostTitle.style.fontWeight = "bold";
+          hostTitle.style.cursor = "pointer";
+          hostTitle.style.display = "block";
+          hostTitle.style.padding = "5px 0";
+          hostTitle.style.borderBottom = "1px solid #ddd";
 
-            const folderIcon = document.createElement("span");
-            folderIcon.textContent = "📂"; // 使用 emoji 作为文件夹图标
-            folderIcon.style.marginRight = "5px";
+          const subList = document.createElement("ul");
+          subList.style.listStyleType = "none";
+          subList.style.paddingLeft = "20px";
+          subList.style.display = "block";
 
-            const folderText = document.createElement("span");
-            folderText.textContent = node.title || "⭐️ Bookmarks Tools";
-            folderText.style.fontWeight = "bold";
-            folderText.style.cursor = "pointer";
-            folderText.style.display = "block";
-            folderText.style.padding = "5px 0";
-            folderText.style.borderBottom = "1px solid #ddd";
+          hostTitle.addEventListener("click", () => {
+            subList.style.display =
+              subList.style.display === "none" ? "block" : "none";
+          });
 
-            folderTitle.appendChild(folderIcon);
-            folderTitle.appendChild(folderText);
-
-            const subList = document.createElement("ul");
-            subList.style.listStyleType = "none";
-            subList.style.paddingLeft = "20px";
-            subList.style.display = "block"; // 默认展开子书签
-
-            folderText.addEventListener("click", () => {
-              subList.style.display =
-                subList.style.display === "none" ? "block" : "none";
-            });
-
-            listItem.appendChild(folderTitle);
-            listItem.appendChild(subList);
-            displayBookmarks(node.children, subList);
-          } else {
-            // 处理单个书签
+          groupedTabs[host].forEach((tab) => {
+            const listItem = document.createElement("li");
             const link = document.createElement("a");
-            link.href = node.url;
-            link.textContent = node.title || "无标题书签";
+            link.href = tab.url;
+            link.textContent = tab.title || "无标题标签页";
             link.style.display = "flex";
             link.style.alignItems = "center";
             link.style.padding = "5px 0";
@@ -107,14 +159,14 @@ function toggleSearchBox(bookmarkTreeNodes) {
             link.style.borderBottom = "1px solid #ddd";
 
             const icon = document.createElement("img");
-            icon.src = getFaviconUrl(node.url); // 根据 URL 获取 favicon
+            icon.src = getFaviconUrl(tab.url);
             icon.style.width = "16px";
             icon.style.height = "16px";
             icon.style.marginRight = "5px";
             icon.onerror = () => {
-              icon.style.display = "none"; // 隐藏图片
+              icon.style.display = "none";
               const starIcon = document.createElement("span");
-              starIcon.textContent = "⭐️"; // 显示星星图标
+              starIcon.textContent = "🔍";
               starIcon.style.marginRight = "5px";
               link.prepend(starIcon);
             };
@@ -122,8 +174,11 @@ function toggleSearchBox(bookmarkTreeNodes) {
             link.prepend(icon);
 
             link.addEventListener("click", (event) => {
-              event.preventDefault(); // 阻止默认行为
-              window.open(link.href, "_blank"); // 在新标签页中打开
+              event.preventDefault();
+              chrome.runtime.sendMessage({
+                action: "activateTab",
+                tabId: tab.id,
+              });
               const openBox = document.getElementById("custom-search-box");
               if (openBox) {
                 openBox.remove();
@@ -131,8 +186,12 @@ function toggleSearchBox(bookmarkTreeNodes) {
             });
 
             listItem.appendChild(link);
-          }
-          parentElement.appendChild(listItem);
+            subList.appendChild(listItem);
+          });
+
+          hostItem.appendChild(hostTitle);
+          hostItem.appendChild(subList);
+          parentElement.appendChild(hostItem);
         });
       };
 
@@ -141,13 +200,14 @@ function toggleSearchBox(bookmarkTreeNodes) {
           const urlObj = new URL(url);
           return `${urlObj.origin}/favicon.ico`;
         } catch (e) {
-          return ""; // 返回空字符串以触发 onerror
+          const defaultFavicon = `https://www.google.com/s2/favicons?domain=${urlObj.hostname}`;
+          return defaultFavicon;
         }
       };
 
       const filterBookmarks = (query, nodes, parentElement) => {
-        parentElement.innerHTML = ""; // 清空当前列表
-        let hasMatches = false; // 用于跟踪是否有匹配项
+        parentElement.innerHTML = "";
+        let hasMatches = false;
         nodes.forEach((node) => {
           if (node.children) {
             const subList = document.createElement("ul");
@@ -187,7 +247,7 @@ function toggleSearchBox(bookmarkTreeNodes) {
               listItem.appendChild(folderTitle);
               listItem.appendChild(subList);
               parentElement.appendChild(listItem);
-              hasMatches = true; // 有匹配项
+              hasMatches = true;
             }
           } else if (node.title.toLowerCase().includes(query)) {
             const listItem = document.createElement("li");
@@ -202,14 +262,14 @@ function toggleSearchBox(bookmarkTreeNodes) {
             link.style.borderBottom = "1px solid #ddd";
 
             const icon = document.createElement("img");
-            icon.src = getFaviconUrl(node.url); // 根据 URL 获取 favicon
+            icon.src = getFaviconUrl(node.url);
             icon.style.width = "16px";
             icon.style.height = "16px";
             icon.style.marginRight = "5px";
             icon.onerror = () => {
-              icon.style.display = "none"; // 隐藏图片
+              icon.style.display = "none";
               const starIcon = document.createElement("span");
-              starIcon.textContent = "⭐️"; // 显示星星图标
+              starIcon.textContent = "⭐️";
               starIcon.style.marginRight = "5px";
               link.prepend(starIcon);
             };
@@ -217,8 +277,8 @@ function toggleSearchBox(bookmarkTreeNodes) {
             link.prepend(icon);
 
             link.addEventListener("click", (event) => {
-              event.preventDefault(); // 阻止默认行为
-              window.open(link.href, "_blank"); // 在新标签页中打开
+              event.preventDefault();
+              window.open(link.href, "_blank");
               const openBox = document.getElementById("custom-search-box");
               if (openBox) {
                 openBox.remove();
@@ -227,58 +287,114 @@ function toggleSearchBox(bookmarkTreeNodes) {
 
             listItem.appendChild(link);
             parentElement.appendChild(listItem);
-            hasMatches = true; // 有匹配项
+            hasMatches = true;
           }
         });
-        return hasMatches; // 返回是否有匹配项
+        return hasMatches;
       };
+
+      const groupedTabs = groupTabsByHost(alltabs);
+      displayGroupedTabs(groupedTabs, tabList);
 
       input.addEventListener("input", () => {
         const query = input.value.toLowerCase();
         filterBookmarks(query, bookmarkTreeNodes, bookmarkList);
       });
 
-      input.addEventListener("keydown", (event) => {
-        const items = bookmarkList.querySelectorAll("li");
-        if (event.key === "ArrowDown") {
-          event.preventDefault();
-          if (currentIndex < items.length - 1) {
-            currentIndex++;
-            items.forEach((item, index) => {
-              item.style.backgroundColor =
-                index === currentIndex ? "#e0e0e0" : "";
+      const displayBookmarks = (nodes, parentElement) => {
+        nodes.forEach((node) => {
+          const listItem = document.createElement("li");
+          if (node.children) {
+            const folderTitle = document.createElement("span");
+            folderTitle.style.display = "flex";
+            folderTitle.style.alignItems = "center";
+
+            const folderIcon = document.createElement("span");
+            folderIcon.textContent = "📂";
+            folderIcon.style.marginRight = "5px";
+
+            const folderText = document.createElement("span");
+            folderText.textContent = node.title || "⭐️ Bookmarks Tools";
+            folderText.style.fontWeight = "bold";
+            folderText.style.cursor = "pointer";
+            folderText.style.display = "block";
+            folderText.style.padding = "5px 0";
+            folderText.style.borderBottom = "1px solid #ddd";
+
+            folderTitle.appendChild(folderIcon);
+            folderTitle.appendChild(folderText);
+
+            const subList = document.createElement("ul");
+            subList.style.listStyleType = "none";
+            subList.style.paddingLeft = "20px";
+            subList.style.display = "block";
+
+            folderText.addEventListener("click", () => {
+              subList.style.display =
+                subList.style.display === "none" ? "block" : "none";
             });
-          }
-        } else if (event.key === "ArrowUp") {
-          event.preventDefault();
-          if (currentIndex > 0) {
-            currentIndex--;
-            items.forEach((item, index) => {
-              item.style.backgroundColor =
-                index === currentIndex ? "#e0e0e0" : "";
+
+            listItem.appendChild(folderTitle);
+            listItem.appendChild(subList);
+            displayBookmarks(node.children, subList);
+          } else {
+            const link = document.createElement("a");
+            link.href = node.url;
+            link.textContent = node.title || "无标题书签";
+            link.style.display = "flex";
+            link.style.alignItems = "center";
+            link.style.padding = "5px 0";
+            link.style.color = "#000";
+            link.style.textDecoration = "none";
+            link.style.borderBottom = "1px solid #ddd";
+
+            const icon = document.createElement("img");
+            icon.src = getFaviconUrl(node.url);
+            icon.style.width = "16px";
+            icon.style.height = "16px";
+            icon.style.marginRight = "5px";
+            icon.onerror = () => {
+              icon.style.display = "none";
+              const starIcon = document.createElement("span");
+              starIcon.textContent = "⭐️";
+              starIcon.style.marginRight = "5px";
+              link.prepend(starIcon);
+            };
+
+            link.prepend(icon);
+
+            link.addEventListener("click", (event) => {
+              event.preventDefault();
+              window.open(link.href, "_blank");
+              const openBox = document.getElementById("custom-search-box");
+              if (openBox) {
+                openBox.remove();
+              }
             });
+
+            listItem.appendChild(link);
           }
-        } else if (event.key === "Enter" && currentIndex >= 0) {
-          const selectedLink = items[currentIndex].querySelector("a");
-          if (selectedLink) {
-            window.open(selectedLink.href, "_blank");
-            searchBox.remove();
-          }
-        }
-      });
+          parentElement.appendChild(listItem);
+        });
+      };
 
       displayBookmarks(bookmarkTreeNodes, bookmarkList);
 
-      searchBox.appendChild(input);
-      searchBox.appendChild(bookmarkList);
+      listsContainer.appendChild(input);
+      listsContainer.appendChild(bookmarkList);
+
+      container.appendChild(listsContainer);
+      container.appendChild(tabList);
+
+      shadow.appendChild(style);
+      shadow.appendChild(container);
       document.body.appendChild(searchBox);
       input.focus();
 
-      // 添加键盘事件监听器
       document.addEventListener("keydown", function escListener(event) {
         if (event.key === "Escape") {
           searchBox.remove();
-          document.removeEventListener("keydown", escListener); // 移除监听器
+          document.removeEventListener("keydown", escListener);
         }
       });
     };
