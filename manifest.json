@@ -1,13 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "Bookmarks Tools",
+  "name": "TabGrouper",
   "version": "1.0",
-  "description": "Quickly find and open bookmarks.",
   "permissions": [
-    "bookmarks",
     "activeTab",
     "scripting",
-    "tabs"
+    "tabs",
+    "tabGroups",
+    "bookmarks"
   ],
   "background": {
     "service_worker": "background.js"
