@@ -74,12 +74,12 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       if (host == "www") {
         host = url.hostname.split(".")[1];
       }
-      var groupExists = false;
 
+      var groupExists = false;
       // 使用 await 等待 Promise 完成
       const groups = await chrome.tabGroups.query({});
       groups.forEach((group) => {
-        if (group.id === groupedTabs[host][0].groupId) {
+        if (group.id === groupedTabs[host][0].groupId && group.title === host) {
           groupExists = true;
         }
       });
