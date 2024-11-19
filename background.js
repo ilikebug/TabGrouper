@@ -43,6 +43,27 @@ chrome.commands.onCommand.addListener((command) => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "activateTab") {
     chrome.tabs.update(request.tabId, { active: true });
+  } else if (request.action === "removeTab") {
+    chrome.tabs.remove(request.tabId, () => {
+      sendResponse({ success: true });
+    });
+    return true; // 表示异步响应
+  } else if (request.action === "refreshGroupedTabs") {
+    chrome.tabs.query({}, (alltabs) => {
+      chrome.tabs.query({ currentWindow: true, active: true }, (tabs) => {
+        if (tabs.length > 0) {
+          chrome.bookmarks.getTree((bookmarkTreeNodes) => {
+            chrome.scripting
+              .executeScript({
+                target: { tabId: tabs[0].id },
+                function: tabGrouper,
+                args: [bookmarkTreeNodes, alltabs],
+              })
+              .catch((error) => console.log("Script execution error:", error));
+          });
+        }
+      });
+    });
   }
 });
 
@@ -243,6 +264,8 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
 
   // 显示分组的标签页
   const displayGroupedTabs = (groupedTabs, parentElement) => {
+    parentElement.innerHTML = ""; // 清空当前列表内容
+
     const icons = [
       "🌟",
       "🚀",
@@ -298,9 +321,51 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
 
       groupedTabs[host].forEach((tab) => {
         const listItem = document.createElement("li");
+        listItem.style.display = "flex";
+        listItem.style.alignItems = "center";
+
+        // 添加精致小巧的圆形删除按钮
+        const deleteButton = document.createElement("button");
+        deleteButton.textContent = "✖";
+        deleteButton.style.marginRight = "10px";
+        deleteButton.style.border = "none";
+        deleteButton.style.background = "transparent";
+        deleteButton.style.color = "#888"; // 灰色
+        deleteButton.style.cursor = "pointer";
+        deleteButton.style.fontSize = "12px";
+        deleteButton.style.padding = "0";
+        deleteButton.style.width = "20px";
+        deleteButton.style.height = "20px";
+        deleteButton.style.borderRadius = "50%";
+        deleteButton.style.display = "flex";
+        deleteButton.style.justifyContent = "center";
+        deleteButton.style.alignItems = "center";
+        deleteButton.style.backgroundColor = "#f0f0f0"; // 背景灰色
+
+        deleteButton.addEventListener("click", (event) => {
+          event.stopPropagation();
+          chrome.runtime.sendMessage(
+            {
+              action: "removeTab",
+              tabId: tab.id,
+            },
+            () => {
+              const openBox = document.getElementById("tab-grouper");
+              if (openBox) {
+                openBox.remove();
+              }
+              // 重新查询所有标签页并刷新列表
+              chrome.runtime.sendMessage({
+                action: "refreshGroupedTabs",
+              });
+            }
+          );
+        });
+
         const link = document.createElement("a");
         link.href = tab.url;
         link.textContent = tab.title || "无标题标签页";
+        link.style.flex = "1";
         link.style.display = "flex";
         link.style.alignItems = "center";
         link.style.padding = "5px 0";
@@ -335,6 +400,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
           }
         });
 
+        listItem.appendChild(deleteButton); // 将删除按钮添加到列表项的最前面
         listItem.appendChild(link);
         subList.appendChild(listItem);
       });
