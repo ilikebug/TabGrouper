@@ -49,7 +49,7 @@ function toggleSearchBox(bookmarkTreeNodes, alltabs) {
           border-radius: 12px;
           padding: 20px;
           box-shadow: 0 6px 12px rgba(0,0,0,0.3);
-          width: 50%;
+          width: 40%;
           height: 50%;
           display: flex;
           font-family: sans-serif;
