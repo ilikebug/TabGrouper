@@ -8,4 +8,10 @@ TabGrouper is a Chrome extension that allows you to group tabs into collections.
 - quickly find tab and active it
 - quickly close tab
 
+  ## Key
+  ```
+  windows: "Ctrl+Shift+Z"
+  Mac: "Command+Shift+Z"
+  ```
+
 <img width="1920" alt="image" src="https://github.com/user-attachments/assets/43af2fce-5ab7-405a-bae0-b382b85474c7">
