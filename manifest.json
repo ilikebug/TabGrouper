@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "TabGrouper",
   "version": "1.0",
+  "description": "TabGrouper is a Chrome extension that allows you to group tabs into collections.",
   "permissions": [
     "activeTab",
     "scripting",
@@ -18,13 +19,18 @@
         "default": "Ctrl+Shift+Z",
         "mac": "Command+Shift+Z"
       },
-      "description": "Open the search box"
+      "description": "Open TabGrouper"
     }
   },
   "host_permissions": [
     "<all_urls>"
   ],
   "action": {
-    "default_popup": "popup/popup.html"
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "images/icon16.png",
+      "48": "images/icon48.png",
+      "128": "images/icon128.png"
+    }
   }
 }
