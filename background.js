@@ -50,7 +50,6 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.tabs.query({}, (alltabs) => {
     const groupedTabs = groupTabsByHost(alltabs);
     Object.keys(groupedTabs).forEach((host) => {
-      // 更新标签页分组
       chrome.tabs.group(
         {
           tabIds: groupedTabs[host].map((tab) => tab.id),
@@ -65,15 +64,30 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === "complete") {
-    chrome.tabs.query({}, (alltabs) => {
-      const groupedTabs = groupTabsByHost(alltabs);
-      Object.keys(groupedTabs).forEach((host) => {
-        // 更新标签页分组
+// 监听标签页更新
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  chrome.tabs.query({}, async (alltabs) => {
+    const groupedTabs = groupTabsByHost(alltabs);
+    if (changeInfo.status === "complete") {
+      const url = new URL(tab.url);
+      let host = url.hostname.split(".")[0];
+      if (host == "www") {
+        host = url.hostname.split(".")[1];
+      }
+      var groupExists = false;
+
+      // 使用 await 等待 Promise 完成
+      const groups = await chrome.tabGroups.query({});
+      groups.forEach((group) => {
+        if (group.id === groupedTabs[host][0].groupId) {
+          groupExists = true;
+        }
+      });
+
+      if (!groupExists) {
         chrome.tabs.group(
           {
-            tabIds: groupedTabs[host].map((tab) => tab.id),
+            tabIds: [tabId],
           },
           (groupId) => {
             chrome.tabGroups.update(groupId, {
@@ -81,16 +95,14 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             });
           }
         );
-      });
-    });
-  }
-});
-
-// 监听标签页更新
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === "complete") {
-    console.log(`Tab ${tabId} updated: `, tab);
-  }
+      } else {
+        chrome.tabs.group({
+          tabIds: [tabId],
+          groupId: groupedTabs[host][0].groupId,
+        });
+      }
+    }
+  });
 });
 
 // 构建标签页分组器
