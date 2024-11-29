@@ -25,6 +25,21 @@
             margin-top: 10px;
             text-shadow: 10px 10px 10px #c21d03;
         }
+
+        #host-list {
+            max-height: 280px;
+            overflow-y: auto;
+        }
+
+        #hosts {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        #hosts li {
+            white-space: nowrap;
+            overflow-x: auto;
+        }
     </style>
 </head>
 <body>
@@ -43,9 +58,9 @@
         <button id="set-host">Set</button>
     </div>
 
-    <div id="host-list"></div>
+    <div id="host-list">
         <h2 style="margin-top: 5px;">Current Supported Host Names</h2>
-        <ul id="hosts" style="overflow-y: auto; height: 100%;">
+        <ul id="hosts" >
             <!-- Host names will be dynamically inserted here -->
         </ul>
     </div>
