@@ -69,6 +69,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
       });
     });
+  } else if (request.action === "search") {
+    searchTabsAndBookmarks(request.query)
+      .then((results) => sendResponse(results))
+      .catch((error) => console.error("搜索错误:", error));
+    return true; // 保持消息通道开放以进行异步响应
   }
 });
 
@@ -164,13 +169,13 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       display: flex;
       font-family: sans-serif;
       font-size: 14px;
+      flex-direction: column;
     }
     #lists {
       display: flex;
       flex-direction: row;
       flex: 1;
       overflow: auto;
-      flex-direction: column;
     }
     input {
       width: 100%;
@@ -225,19 +230,38 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     displayGroupedTabs(groupedTabs, tabList);
 
     // 监听输入以过滤书签
-    input.addEventListener("input", () => {
+    input.addEventListener("input", async () => {
       const query = input.value.toLowerCase();
-      filterBookmarks(query, bookmarkTreeNodes, bookmarkList);
+      if (query) {
+        chrome.runtime.sendMessage(
+          { action: "search", query: query },
+          (results) => {
+            const tabs = results.filter(item => item.type === 'tab');
+            const bookmarks = results.filter(item => item.type === 'bookmark');
+            
+            // 更新标签页列表，保持分组显示
+            const groupedTabs = groupTabsByHost(tabs);
+            displayGroupedTabs(groupedTabs, tabList);
+            
+            // 更新书签列表，显示完整路径
+            bookmarkList.innerHTML = "";
+            displayBookmarks(bookmarks, bookmarkList, true); // true 表示这是搜索结果
+          }
+        );
+      } else {
+        displayGroupedTabs(groupTabsByHost(alltabs), tabList);
+        displayBookmarks(bookmarkTreeNodes, bookmarkList);
+      }
     });
 
     // 显示书签
     displayBookmarks(bookmarkTreeNodes, bookmarkList);
 
-    listsContainer.appendChild(input);
     listsContainer.appendChild(bookmarkList);
+    listsContainer.appendChild(tabList);
 
+    container.appendChild(input);
     container.appendChild(listsContainer);
-    container.appendChild(tabList);
 
     shadow.appendChild(style);
     shadow.appendChild(container);
@@ -276,7 +300,16 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
 
   // 显示分组的标签页
   const displayGroupedTabs = (groupedTabs, parentElement) => {
-    parentElement.innerHTML = ""; // 清空当前列表内容
+    parentElement.innerHTML = "";
+
+    if (Object.keys(groupedTabs).length === 0) {
+      const noResults = document.createElement("li");
+      noResults.textContent = "没有找到匹配的标签页";
+      noResults.style.padding = "10px";
+      noResults.style.color = "#666";
+      parentElement.appendChild(noResults);
+      return;
+    }
 
     const icons = [
       "🌟",
@@ -524,9 +557,30 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
   };
 
   // 显示书签
-  const displayBookmarks = (nodes, parentElement) => {
+  const displayBookmarks = (nodes, parentElement, isSearchResult = false) => {
+    parentElement.innerHTML = "";
+
+    if (nodes.length === 0 || (nodes[0].children && nodes[0].children.length === 0)) {
+      const noResults = document.createElement("li");
+      noResults.textContent = "没有找到匹配的书签";
+      noResults.style.padding = "10px";
+      noResults.style.color = "#666";
+      parentElement.appendChild(noResults);
+      return;
+    }
+
     nodes.forEach((node) => {
       const listItem = document.createElement("li");
+      if (isSearchResult && node.path) {
+        // 显示搜索结果时的路径
+        const pathElement = document.createElement("div");
+        pathElement.style.fontSize = "12px";
+        pathElement.style.color = "#666";
+        pathElement.style.marginBottom = "3px";
+        pathElement.textContent = `📂 ${node.path.join(" > ")}`;
+        listItem.appendChild(pathElement);
+      }
+
       if (node.children) {
         const folderTitle = document.createElement("span");
         folderTitle.style.display = "flex";
@@ -608,4 +662,61 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
   } else {
     createSearchBox(bookmarkTreeNodes, alltabs);
   }
+}
+
+async function searchTabsAndBookmarks(query) {
+  // 搜索标签页
+  const tabs = await chrome.tabs.query({});
+  const matchedTabs = tabs.filter(tab => 
+    tab.title.toLowerCase().includes(query.toLowerCase()) || 
+    tab.url.toLowerCase().includes(query.toLowerCase())
+  );
+
+  // 搜索收藏夹并保持完整路径
+  const bookmarks = await chrome.bookmarks.search(query);
+  const bookmarksWithPath = await Promise.all(bookmarks.map(async (bookmark) => {
+    const path = await getBookmarkPath(bookmark.id);
+    return {
+      type: 'bookmark',
+      id: bookmark.id,
+      title: bookmark.title,
+      url: bookmark.url,
+      path: path // 包含完整的文件夹路径
+    };
+  }));
+
+  // 合并结果
+  const results = [
+    ...matchedTabs.map(tab => ({
+      type: 'tab',
+      id: tab.id,
+      title: tab.title,
+      url: tab.url,
+      favIconUrl: tab.favIconUrl,
+      groupId: tab.groupId // 保存标签页组ID
+    })),
+    ...bookmarksWithPath
+  ];
+
+  return results;
+}
+
+// 添加获取书签路径的辅助函数
+async function getBookmarkPath(bookmarkId) {
+  const getNode = async (id) => {
+    const nodes = await chrome.bookmarks.get(id);
+    return nodes[0];
+  };
+
+  const path = [];
+  let currentNode = await getNode(bookmarkId);
+
+  while (currentNode.parentId) {
+    currentNode = await getNode(currentNode.parentId);
+    if (currentNode.title) {
+      path.unshift(currentNode.title);
+    }
+  }
+
+  return path;
 }
