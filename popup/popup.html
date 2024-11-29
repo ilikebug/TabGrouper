@@ -1,6 +1,54 @@
 <!DOCTYPE html>
 <html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TabGrouper</title>
+    <style>
+        body {
+            width: 400px; /* set width */
+            height: 400px; /* set height */
+        }
+
+        input {
+            height: 20px;
+            border-radius: 8px;
+        }
+
+        button {
+            margin-top: 3px;
+            margin-left: 10px;
+            height: 20px;
+            border-radius: 8px;
+        }
+
+        h2{
+            margin-top: 10px;
+            text-shadow: 10px 10px 10px #c21d03;
+        }
+    </style>
+</head>
 <body>
-    <h1>TabGrouper</h1>
+    <h2>TabGrouper</h2>
+    <p style="margin: 10px 0; color: #666;">
+        TabGrouper helps you organize your tabs automatically. Enter a website domain and group name, and tabs with the same domain will be grouped together.
+    </p>
+    
+    <!-- Display list of currently supported host names -->
+    
+    <!-- Input fields and button for setting custom host name -->
+    <div id="custom-host" style="display: flex; flex-direction: row; align-items: left; justify-content: left;">
+        <input type="text" id="host-input" placeholder="www.example.com">
+        <p style="margin-left: 10px; margin-right: 10px; font-size: 15px; margin-top: 5px">:</p>
+        <input type="text" id="name-input" placeholder="example">
+        <button id="set-host">Set</button>
+    </div>
+
+    <div id="host-list"></div>
+        <h2 style="margin-top: 5px;">Current Supported Host Names</h2>
+        <ul id="hosts">
+            <!-- Host names will be dynamically inserted here -->
+        </ul>
+    </div>
+    <script src="popup.js"></script>
 </body>
 </html> 

@@ -1,11 +1,16 @@
 const groupTabsByHost = (tabs) => {
   const groupedTabs = {};
-  tabs.forEach((tab) => {
+  tabs.forEach(async (tab) => {
     try {
+      // generate host
       const url = new URL(tab.url);
+      const supportedHosts = await chrome.storage.local.get("supportedHosts");
       let host = url.hostname.split(".")[0];
       if (host == "www") {
         host = url.hostname.split(".")[1];
+      }
+      if (supportedHosts.supportedHosts[host]) {
+        host = supportedHosts.supportedHosts[host];
       }
       if (!groupedTabs[host]) {
         groupedTabs[host] = [];
@@ -90,10 +95,15 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   chrome.tabs.query({}, async (alltabs) => {
     if (changeInfo.status === "complete") {
       // generate host
+      const supportedHosts = await chrome.storage.local.get("supportedHosts");
       const url = new URL(tab.url);
       let host = url.hostname.split(".")[0];
       if (host == "www") {
         host = url.hostname.split(".")[1];
+      }
+
+      if (supportedHosts.supportedHosts[url.hostname]) {
+        host = supportedHosts.supportedHosts[url.hostname];
       }
 
       var groupExists = false;
