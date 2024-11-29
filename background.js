@@ -88,8 +88,8 @@ chrome.runtime.onInstalled.addListener(() => {
 // 监听标签页更新
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   chrome.tabs.query({}, async (alltabs) => {
-    const groupedTabs = groupTabsByHost(alltabs);
     if (changeInfo.status === "complete") {
+      // generate host
       const url = new URL(tab.url);
       let host = url.hostname.split(".")[0];
       if (host == "www") {
@@ -97,11 +97,13 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       }
 
       var groupExists = false;
+      var existGroupID = 0;
       // 使用 await 等待 Promise 完成
       const groups = await chrome.tabGroups.query({});
       groups.forEach((group) => {
-        if (group.id === groupedTabs[host][0].groupId && group.title === host) {
+        if (group.title === host) {
           groupExists = true;
+          existGroupID = group.id;
         }
       });
 
@@ -119,7 +121,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       } else {
         chrome.tabs.group({
           tabIds: [tabId],
-          groupId: groupedTabs[host][0].groupId,
+          groupId: existGroupID,
         });
       }
     }
