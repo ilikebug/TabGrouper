@@ -174,6 +174,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       padding: 0;
       box-sizing: border-box;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: #333;
     }
     
     #container {
@@ -182,7 +183,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       left: 50%;
       transform: translate(-50%, -50%);
       z-index: 10000;
-      background-color: rgba(249, 249, 249, 0.98);
+      background-color: #ffffff;
       border: 1px solid #ccc;
       border-radius: 12px;
       padding: 20px;
@@ -197,29 +198,40 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       line-height: 1.4 !important;
     }
     
-    #lists {
-      display: flex;
-      flex-direction: row;
-      flex: 1;
-      overflow: auto;
-      gap: 20px;
-    }
-    
     input {
       width: 100%;
       padding: 12px;
       border: 1px solid #ddd;
       border-radius: 6px;
       box-sizing: border-box;
-      background-color: #fff;
+      background-color: #ffffff !important;
       margin-bottom: 15px;
       font-size: 14px !important;
       outline: none;
+      color: #000000 !important;
+      -webkit-text-fill-color: #000000 !important;
+      opacity: 1 !important;
+    }
+    
+    input::placeholder {
+      color: #999999 !important;
+      -webkit-text-fill-color: #999999 !important;
+      opacity: 1 !important;
     }
     
     input:focus {
       border-color: #4a90e2;
       box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+      color: #000000 !important;
+      -webkit-text-fill-color: #000000 !important;
+    }
+    
+    #lists {
+      display: flex;
+      flex-direction: row;
+      flex: 1;
+      overflow: auto;
+      gap: 20px;
     }
     
     ul {
