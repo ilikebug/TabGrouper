@@ -537,7 +537,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     }
   };
 
-  // 过滤书签
+  // 过滤签
   const filterBookmarks = (query, nodes, parentElement) => {
     parentElement.innerHTML = "";
     let hasMatches = false;
@@ -627,13 +627,10 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
   };
 
   // 显示书签
-  const displayBookmarks = (nodes, parentElement, isSearchResult = false) => {
+  const displayBookmarks = (nodes, parentElement, isSearchResult = false, level = 0) => {
     parentElement.innerHTML = "";
 
-    if (
-      nodes.length === 0 ||
-      (nodes[0].children && nodes[0].children.length === 0)
-    ) {
+    if (nodes.length === 0 || (nodes[0].children && nodes[0].children.length === 0)) {
       const noResults = document.createElement("li");
       noResults.textContent = "No matching bookmarks found.";
       noResults.style.padding = "10px";
@@ -644,8 +641,9 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
 
     nodes.forEach((node) => {
       const listItem = document.createElement("li");
+      listItem.style.marginLeft = `${level * 5}px`; // 每个层级缩进5px
+
       if (isSearchResult && node.path) {
-        // 显示搜索结果时的路径
         const pathElement = document.createElement("div");
         pathElement.style.fontSize = "12px";
         pathElement.style.color = "#666";
@@ -677,17 +675,16 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
 
         const subList = document.createElement("ul");
         subList.style.listStyleType = "none";
-        subList.style.paddingLeft = "20px";
+        subList.style.padding = "0"; // 移除默认padding
         subList.style.display = "block";
 
         folderText.addEventListener("click", () => {
-          subList.style.display =
-            subList.style.display === "none" ? "block" : "none";
+          subList.style.display = subList.style.display === "none" ? "block" : "none";
         });
 
         listItem.appendChild(folderTitle);
         listItem.appendChild(subList);
-        displayBookmarks(node.children, subList);
+        displayBookmarks(node.children, subList, false, level + 1); // 递归调用时增加层级
       } else {
         const link = document.createElement("a");
         link.href = node.url;
