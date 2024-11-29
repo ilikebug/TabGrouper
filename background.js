@@ -236,13 +236,15 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         chrome.runtime.sendMessage(
           { action: "search", query: query },
           (results) => {
-            const tabs = results.filter(item => item.type === 'tab');
-            const bookmarks = results.filter(item => item.type === 'bookmark');
-            
+            const tabs = results.filter((item) => item.type === "tab");
+            const bookmarks = results.filter(
+              (item) => item.type === "bookmark"
+            );
+
             // 更新标签页列表，保持分组显示
             const groupedTabs = groupTabsByHost(tabs);
             displayGroupedTabs(groupedTabs, tabList);
-            
+
             // 更新书签列表，显示完整路径
             bookmarkList.innerHTML = "";
             displayBookmarks(bookmarks, bookmarkList, true); // true 表示这是搜索结果
@@ -304,7 +306,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
 
     if (Object.keys(groupedTabs).length === 0) {
       const noResults = document.createElement("li");
-      noResults.textContent = "没有找到匹配的标签页";
+      noResults.textContent = "No matching tab found.";
       noResults.style.padding = "10px";
       noResults.style.color = "#666";
       parentElement.appendChild(noResults);
@@ -560,9 +562,12 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
   const displayBookmarks = (nodes, parentElement, isSearchResult = false) => {
     parentElement.innerHTML = "";
 
-    if (nodes.length === 0 || (nodes[0].children && nodes[0].children.length === 0)) {
+    if (
+      nodes.length === 0 ||
+      (nodes[0].children && nodes[0].children.length === 0)
+    ) {
       const noResults = document.createElement("li");
-      noResults.textContent = "没有找到匹配的书签";
+      noResults.textContent = "No matching bookmarks found.";
       noResults.style.padding = "10px";
       noResults.style.color = "#666";
       parentElement.appendChild(noResults);
@@ -667,35 +672,38 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
 async function searchTabsAndBookmarks(query) {
   // 搜索标签页
   const tabs = await chrome.tabs.query({});
-  const matchedTabs = tabs.filter(tab => 
-    tab.title.toLowerCase().includes(query.toLowerCase()) || 
-    tab.url.toLowerCase().includes(query.toLowerCase())
+  const matchedTabs = tabs.filter(
+    (tab) =>
+      tab.title.toLowerCase().includes(query.toLowerCase()) ||
+      tab.url.toLowerCase().includes(query.toLowerCase())
   );
 
   // 搜索收藏夹并保持完整路径
   const bookmarks = await chrome.bookmarks.search(query);
-  const bookmarksWithPath = await Promise.all(bookmarks.map(async (bookmark) => {
-    const path = await getBookmarkPath(bookmark.id);
-    return {
-      type: 'bookmark',
-      id: bookmark.id,
-      title: bookmark.title,
-      url: bookmark.url,
-      path: path // 包含完整的文件夹路径
-    };
-  }));
+  const bookmarksWithPath = await Promise.all(
+    bookmarks.map(async (bookmark) => {
+      const path = await getBookmarkPath(bookmark.id);
+      return {
+        type: "bookmark",
+        id: bookmark.id,
+        title: bookmark.title,
+        url: bookmark.url,
+        path: path, // 包含完整的文件夹路径
+      };
+    })
+  );
 
   // 合并结果
   const results = [
-    ...matchedTabs.map(tab => ({
-      type: 'tab',
+    ...matchedTabs.map((tab) => ({
+      type: "tab",
       id: tab.id,
       title: tab.title,
       url: tab.url,
       favIconUrl: tab.favIconUrl,
-      groupId: tab.groupId // 保存标签页组ID
+      groupId: tab.groupId, // 保存标签页组ID
     })),
-    ...bookmarksWithPath
+    ...bookmarksWithPath,
   ];
 
   return results;
