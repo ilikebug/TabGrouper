@@ -9,8 +9,16 @@ const groupTabsByHost = (tabs) => {
       if (host == "www") {
         host = url.hostname.split(".")[1];
       }
-      if (supportedHosts.supportedHosts[host]) {
-        host = supportedHosts.supportedHosts[host];
+      if (supportedHosts != undefined) {
+        // 修改成 URL 包含 supportedHosts 的 host
+        for (const [key, value] of Object.entries(
+          supportedHosts.supportedHosts
+        )) {
+          if (tab.url.includes(key)) {
+            host = value;
+            break;
+          }
+        }
       }
       if (!groupedTabs[host]) {
         groupedTabs[host] = [];
@@ -107,8 +115,16 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         host = url.hostname.split(".")[1];
       }
 
-      if (supportedHosts.supportedHosts[url.hostname]) {
-        host = supportedHosts.supportedHosts[url.hostname];
+      if (supportedHosts != undefined) {
+        // 修改成 URL 包含 supportedHosts 的 host
+        for (const [key, value] of Object.entries(
+          supportedHosts.supportedHosts
+        )) {
+          if (tab.url.includes(key)) {
+            host = value;
+            break;
+          }
+        }
       }
 
       var groupExists = false;
@@ -627,10 +643,18 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
   };
 
   // 显示书签
-  const displayBookmarks = (nodes, parentElement, isSearchResult = false, level = 0) => {
+  const displayBookmarks = (
+    nodes,
+    parentElement,
+    isSearchResult = false,
+    level = 0
+  ) => {
     parentElement.innerHTML = "";
 
-    if (nodes.length === 0 || (nodes[0].children && nodes[0].children.length === 0)) {
+    if (
+      nodes.length === 0 ||
+      (nodes[0].children && nodes[0].children.length === 0)
+    ) {
       const noResults = document.createElement("li");
       noResults.textContent = "No matching bookmarks found.";
       noResults.style.padding = "10px";
@@ -679,7 +703,8 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         subList.style.display = "block";
 
         folderText.addEventListener("click", () => {
-          subList.style.display = subList.style.display === "none" ? "block" : "none";
+          subList.style.display =
+            subList.style.display === "none" ? "block" : "none";
         });
 
         listItem.appendChild(folderTitle);
