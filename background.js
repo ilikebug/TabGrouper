@@ -316,7 +316,11 @@ async function tabGrouper(bookmarkTreeNodes, alltabs) {
     const input = document.createElement("input");
     input.type = "text";
     input.placeholder = "Search...";
-
+    
+    // 添加这些样式确保搜索框始终可见且在顶层
+    input.style.position = "relative";
+    input.style.zIndex = "10001";
+    
     const listsContainer = document.createElement("div");
     listsContainer.id = "lists";
 
@@ -367,14 +371,23 @@ async function tabGrouper(bookmarkTreeNodes, alltabs) {
     shadow.appendChild(style);
     shadow.appendChild(container);
     document.body.appendChild(searchBox);
-    input.focus();
+    
+    // 确保搜索框获得焦点
+    setTimeout(() => {
+        input.focus();
+        // 阻止其他元素获取焦点
+        input.addEventListener('blur', (e) => {
+            setTimeout(() => input.focus(), 0);
+        });
+    }, 0);
 
-    // 监听Esc键关闭搜索框
-    document.addEventListener("keydown", function escListener(event) {
-      if (event.key === "Escape") {
-        searchBox.remove();
-        document.removeEventListener("keydown", escListener);
-      }
+    // 修改键盘事件监听，确保在搜索框中按 Esc 键时关闭
+    input.addEventListener("keydown", function(event) {
+        if (event.key === "Escape") {
+            searchBox.remove();
+        }
+        // 阻止事件冒泡，避免触发页面上的其他快捷键
+        event.stopPropagation();
     });
   };
 
