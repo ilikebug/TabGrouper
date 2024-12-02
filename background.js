@@ -1,16 +1,17 @@
-const groupTabsByHost = (tabs) => {
+const groupTabsByHost = async (tabs) => {
   const groupedTabs = {};
-  tabs.forEach(async (tab) => {
+
+  // 使用 for...of 替代 forEach 以正确处理异步操作
+  for (const tab of tabs) {
     try {
-      // generate host
       const url = new URL(tab.url);
-      const supportedHosts = await chrome.storage.local.get("supportedHosts");
       let host = url.hostname.split(".")[0];
       if (host == "www") {
         host = url.hostname.split(".")[1];
       }
-      if (supportedHosts != undefined) {
-        // 修改成 URL 包含 supportedHosts 的 host
+
+      const supportedHosts = await chrome.storage.local.get("supportedHosts");
+      if (supportedHosts?.supportedHosts) {
         for (const [key, value] of Object.entries(
           supportedHosts.supportedHosts
         )) {
@@ -20,6 +21,7 @@ const groupTabsByHost = (tabs) => {
           }
         }
       }
+
       if (!groupedTabs[host]) {
         groupedTabs[host] = [];
       }
@@ -27,7 +29,8 @@ const groupTabsByHost = (tabs) => {
     } catch (e) {
       console.log("Invalid URL:", tab.url);
     }
-  });
+  }
+
   return groupedTabs;
 };
 
@@ -160,9 +163,9 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 });
 
 // 构建标签页分组器
-function tabGrouper(bookmarkTreeNodes, alltabs) {
+async function tabGrouper(bookmarkTreeNodes, alltabs) {
   // 创建搜索框
-  const createSearchBox = (bookmarkTreeNodes, alltabs) => {
+  const createSearchBox = async (bookmarkTreeNodes, alltabs) => {
     const searchBox = document.createElement("div");
     searchBox.id = "tab-grouper";
     const shadow = searchBox.attachShadow({ mode: "open" });
@@ -322,7 +325,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     tabList.style.marginLeft = "20px";
 
     // 显示分组的标签页
-    const groupedTabs = groupTabsByHost(alltabs);
+    const groupedTabs = await groupTabsByHost(alltabs);
     displayGroupedTabs(groupedTabs, tabList);
 
     // 监听输入以过滤书签
@@ -331,14 +334,14 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       if (query) {
         chrome.runtime.sendMessage(
           { action: "search", query: query },
-          (results) => {
+          async (results) => {
             const tabs = results.filter((item) => item.type === "tab");
             const bookmarks = results.filter(
               (item) => item.type === "bookmark"
             );
 
             // 更新标签页列表，保持分组显示
-            const groupedTabs = groupTabsByHost(tabs);
+            const groupedTabs = await groupTabsByHost(tabs);
             displayGroupedTabs(groupedTabs, tabList);
 
             // 更新书签列表，显示完整路径
@@ -347,7 +350,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
           }
         );
       } else {
-        displayGroupedTabs(groupTabsByHost(alltabs), tabList);
+        displayGroupedTabs(await groupTabsByHost(alltabs), tabList);
         displayBookmarks(bookmarkTreeNodes, bookmarkList);
       }
     });
@@ -376,15 +379,30 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
   };
 
   // 分组标签页
-  const groupTabsByHost = (tabs) => {
+  const groupTabsByHost = async (tabs) => {
     const groupedTabs = {};
-    tabs.forEach((tab) => {
+
+    // 使用 for...of 替代 forEach 以正确处理异步操作
+    for (const tab of tabs) {
       try {
         const url = new URL(tab.url);
         let host = url.hostname.split(".")[0];
         if (host == "www") {
           host = url.hostname.split(".")[1];
         }
+
+        const supportedHosts = await chrome.storage.local.get("supportedHosts");
+        if (supportedHosts?.supportedHosts) {
+          for (const [key, value] of Object.entries(
+            supportedHosts.supportedHosts
+          )) {
+            if (tab.url.includes(key)) {
+              host = value;
+              break;
+            }
+          }
+        }
+
         if (!groupedTabs[host]) {
           groupedTabs[host] = [];
         }
@@ -392,14 +410,14 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       } catch (e) {
         console.log("Invalid URL:", tab.url);
       }
-    });
+    }
+
     return groupedTabs;
   };
 
   // 显示分组的标签页
   const displayGroupedTabs = (groupedTabs, parentElement) => {
     parentElement.innerHTML = "";
-
     if (Object.keys(groupedTabs).length === 0) {
       const noResults = document.createElement("li");
       noResults.textContent = "No matching tab found.";
