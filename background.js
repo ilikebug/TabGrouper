@@ -108,7 +108,7 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // 监听标签页更新
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  chrome.tabs.query({}, async (alltabs) => {
+  chrome.tabs.query({}, async () => {
     if (changeInfo.status === "complete") {
       // generate host
       const supportedHosts = await chrome.storage.local.get("supportedHosts");
@@ -797,6 +797,13 @@ async function searchTabsAndBookmarks(query) {
       tab.title.toLowerCase().includes(query.toLowerCase()) ||
       tab.url.toLowerCase().includes(query.toLowerCase())
   );
+
+  const groupedTabs = await groupTabsByHost(tabs);
+  Object.keys(groupedTabs).forEach((host) => {
+    if (host.toLowerCase().includes(query.toLowerCase())) {
+      matchedTabs.push(...groupedTabs[host]);
+    }
+  });
 
   // 搜索收藏夹并保持完整路径
   const bookmarks = await chrome.bookmarks.search(query);
