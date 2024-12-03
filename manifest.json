@@ -9,8 +9,7 @@
     "tabs",
     "tabGroups",
     "bookmarks",
-    "storage",
-    "<all_urls>"
+    "storage"
   ],
   "background": {
     "service_worker": "background.js"
