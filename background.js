@@ -815,8 +815,10 @@ async function searchTabsAndBookmarks(query) {
   Object.keys(groupedTabs).forEach((host) => {
     if (host.toLowerCase().includes(query.toLowerCase())) {
       // judge if the host is in the matchedTabs
-      const isHostInMatchedTabs = matchedTabs.some((tab) =>
-        tab.url.includes(host)
+      const isHostInMatchedTabs = matchedTabs.some(
+        (tab) =>
+          tab.title.toLowerCase().includes(query.toLowerCase()) ||
+          tab.url.toLowerCase().includes(query.toLowerCase())
       );
       if (!isHostInMatchedTabs) {
         matchedTabs.push(...groupedTabs[host]);
