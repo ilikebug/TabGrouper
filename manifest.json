@@ -17,8 +17,8 @@
   "commands": {
     "open-search-box": {
       "suggested_key": {
-        "default": "Ctrl+Shift+Z",
-        "mac": "Command+Shift+Z"
+        "default": "Ctrl+H",
+        "mac": "Command+H"
       },
       "description": "Open TabGrouper"
     }
