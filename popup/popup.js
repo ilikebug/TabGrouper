@@ -13,91 +13,71 @@ function displayHosts() {
     }
     const hostList = document.getElementById("hosts");
     hostList.innerHTML = ""; // 清空列表
+
+    // 按 name 进行分类
+    const categories = {};
     for (const [host, name] of Object.entries(supportedHosts)) {
-      console.log(`${host} => ${name}`);
-      const listItem = document.createElement("li");
-      listItem.style.fontSize = "15px";
-      listItem.style.display = "flex";
-      listItem.style.alignItems = "center";
-      listItem.style.padding = "8px 12px";
-      listItem.style.borderBottom = "1px solid #eee";
-      listItem.style.backgroundColor = "#fff";
-      listItem.style.transition = "background-color 0.2s";
+      if (!categories[name]) {
+        categories[name] = [];
+      }
+      categories[name].push(host);
+    }
 
-      // 创建一个 span 来包含文本内容
-      const textSpan = document.createElement("span");
-      textSpan.style.display = "flex";
-      textSpan.style.alignItems = "center";
-      textSpan.style.gap = "8px";
+    // 创建分类列表
+    for (const [name, hosts] of Object.entries(categories)) {
+      const categoryDiv = document.createElement("div");
+      categoryDiv.className = "category";
 
-      // 分别创建 host 和 name 的显示元素
-      const hostSpan = document.createElement("span");
-      hostSpan.textContent = host;
-      hostSpan.style.color = "#1a73e8"; // Google blue
-      hostSpan.style.fontWeight = "500";
+      const categoryTitle = document.createElement("h3");
+      categoryTitle.textContent = name;
+      categoryDiv.appendChild(categoryTitle);
 
-      const separator = document.createElement("span");
-      separator.textContent = "<=>";
-      separator.style.color = "#666";
-      separator.style.fontSize = "14px";
+      const categoryList = document.createElement("ul");
 
-      const nameSpan = document.createElement("span");
-      nameSpan.textContent = name;
-      nameSpan.style.color = "#137333"; // Google green
-      nameSpan.style.fontWeight = "500";
+      hosts.forEach((host) => {
+        const listItem = document.createElement("li");
 
-      // 将所有元素添加到 textSpan
-      textSpan.appendChild(hostSpan);
-      textSpan.appendChild(separator);
-      textSpan.appendChild(nameSpan);
+        // 创建一个 span 来包含文本内容
+        const textSpan = document.createElement("span");
+        textSpan.className = "text-span";
 
-      // 修改删除按钮的样式
-      const deleteButton = document.createElement("button");
-      deleteButton.textContent = "✖";
-      deleteButton.style.marginRight = "12px";
-      deleteButton.style.border = "none";
-      deleteButton.style.background = "transparent";
-      deleteButton.style.color = "#999";
-      deleteButton.style.cursor = "pointer";
-      deleteButton.style.fontSize = "14px";
-      deleteButton.style.padding = "4px";
-      deleteButton.style.width = "24px";
-      deleteButton.style.height = "24px";
-      deleteButton.style.borderRadius = "50%";
-      deleteButton.style.display = "flex";
-      deleteButton.style.justifyContent = "center";
-      deleteButton.style.alignItems = "center";
-      deleteButton.style.transition = "all 0.2s";
+        // 分别创建 host 和 name 的显示元素
+        const hostSpan = document.createElement("span");
+        hostSpan.className = "host-span";
+        hostSpan.textContent = host;
 
-      // 添加删除功能
-      deleteButton.addEventListener("click", () => {
-        delete supportedHosts[host];
-        saveHosts(supportedHosts);
-        displayHosts();
+        const separator = document.createElement("span");
+        separator.className = "separator";
+        separator.textContent = "<=>";
+
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "name-span";
+        nameSpan.textContent = name;
+
+        // 将所有元素添加到 textSpan
+        textSpan.appendChild(hostSpan);
+        textSpan.appendChild(separator);
+        textSpan.appendChild(nameSpan);
+
+        // 修改删除按钮的样式
+        const deleteButton = document.createElement("button");
+        deleteButton.className = "delete-button";
+        deleteButton.textContent = "✖";
+
+        // 添加删除功能
+        deleteButton.addEventListener("click", () => {
+          delete supportedHosts[host];
+          saveHosts(supportedHosts);
+          displayHosts();
+        });
+
+        listItem.appendChild(deleteButton);
+        listItem.appendChild(textSpan);
+        categoryList.appendChild(listItem);
       });
 
-      // 添加悬停效果
-      deleteButton.addEventListener("mouseover", () => {
-        deleteButton.style.backgroundColor = "#ff4d4f";
-        deleteButton.style.color = "#fff";
-      });
-
-      deleteButton.addEventListener("mouseout", () => {
-        deleteButton.style.backgroundColor = "transparent";
-        deleteButton.style.color = "#999";
-      });
-
-      listItem.addEventListener("mouseover", () => {
-        listItem.style.backgroundColor = "#f5f5f5";
-      });
-
-      listItem.addEventListener("mouseout", () => {
-        listItem.style.backgroundColor = "#fff";
-      });
-
-      listItem.appendChild(deleteButton);
-      listItem.appendChild(textSpan);
-      hostList.appendChild(listItem);
+      categoryDiv.appendChild(categoryList);
+      hostList.appendChild(categoryDiv);
     }
   });
 }
@@ -111,6 +91,16 @@ document.getElementById("set-host").addEventListener("click", () => {
     supportedHosts[host] = name;
     saveHosts(supportedHosts);
     displayHosts();
+
+    // 显示成功消息
+    const message = document.getElementById("message");
+    message.textContent = "Host and name set successfully!";
+    message.style.display = "block";
+
+    // 3秒后隐藏消息
+    setTimeout(() => {
+      message.style.display = "none";
+    }, 2000);
   }
 });
 

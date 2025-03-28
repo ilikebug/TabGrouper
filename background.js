@@ -39,7 +39,7 @@ chrome.commands.onCommand.addListener((command) => {
   if (command === "open-search-box") {
     chrome.tabs.query({}, (alltabs) => {
       chrome.tabs.query({ currentWindow: true, active: true }, (tabs) => {
-        if (tabs.length > 0) {
+        if (tabs.length > 0 && !tabs[0].url.startsWith("chrome://")) {
           chrome.bookmarks.getTree((bookmarkTreeNodes) => {
             chrome.scripting
               .executeScript({
