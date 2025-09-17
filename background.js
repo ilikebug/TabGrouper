@@ -326,6 +326,13 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     // Add https:// for everything else
     return 'https://' + trimmed;
   }
+  
+  function highlightText(text, query) {
+    if (!query || !text) return text;
+    
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    return text.replace(regex, '<mark style="background: rgba(16, 185, 129, 0.3); padding: 1px 2px; border-radius: 2px; font-weight: 600;">$1</mark>');
+  }
 
   async function getSupportedHosts() {
     try {
@@ -1093,15 +1100,36 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     // Search functionality
     const debouncedSearch = debounce(async (query) => {
       if (query) {
-        chrome.runtime.sendMessage({ action: ACTIONS.SEARCH, query: query }, (results) => {
+        // Search in tabs and bookmarks
+        chrome.runtime.sendMessage({ action: ACTIONS.SEARCH, query: query }, async (results) => {
           const tabs = results.filter(item => item.type === 'tab');
           const bookmarks = results.filter(item => item.type === 'bookmark');
+          
+          // Also search in Quick Access
+          const recentTabs = await getRecentTabs();
+          const filteredRecentTabs = recentTabs.filter(tab => {
+            const title = (tab.title || '').toLowerCase();
+            const url = (tab.url || '').toLowerCase();
+            return title.includes(query) || url.includes(query);
+          });
+          
           updateSearchResults({ tabs, bookmarks }, bookmarkList, tabList);
+          displaySidebarRecentTabs(recentTabsList, filteredRecentTabs, query);
+          
+          // Update sidebar title with search results count
+          if (filteredRecentTabs.length > 0) {
+            searchBox._sidebarTitle.innerHTML = `⚡ Quick Access (${filteredRecentTabs.length} found)`;
+          } else {
+            searchBox._sidebarTitle.innerHTML = '⚡ Quick Access (no matches)';
+          }
         });
       } else {
         const groupedTabs = await groupTabsByHost(alltabs);
         displayGroupedTabs(groupedTabs, tabList);
         displayBookmarks(bookmarkTreeNodes, bookmarkList);
+        displaySidebarRecentTabs(recentTabsList);
+        // Reset sidebar title when not searching
+        searchBox._sidebarTitle.innerHTML = '⚡ Quick Access';
       }
     }, 300);
 
@@ -1129,6 +1157,9 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     const sidebarTitle = document.createElement('div');
     sidebarTitle.className = 'sidebar-title';
     sidebarTitle.innerHTML = '⚡ Quick Access';
+    
+    // Store reference for updating search results count
+    searchBox._sidebarTitle = sidebarTitle;
 
     const recentTabsList = document.createElement('ul');
     recentTabsList.className = 'sidebar-recent-list';
@@ -1401,18 +1432,30 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       });
     }
 
-    async function displaySidebarRecentTabs(parentElement) {
+    async function displaySidebarRecentTabs(parentElement, filteredTabs = null, searchQuery = null) {
       parentElement.innerHTML = '';
       
-      const recentTabs = await getRecentTabs();
+      // Use filtered tabs if provided, otherwise get all recent tabs
+      const recentTabs = filteredTabs || await getRecentTabs();
       
       if (recentTabs.length === 0) {
         const emptyState = document.createElement('div');
         emptyState.className = 'sidebar-empty';
-        emptyState.innerHTML = `
-          <div class="sidebar-empty-icon">⚡</div>
-          <div>No recent pages yet<br>Browse some sites to see them here</div>
-        `;
+        
+        if (searchQuery) {
+          // Show search-specific empty state
+          emptyState.innerHTML = `
+            <div class="sidebar-empty-icon">🔍</div>
+            <div>No matches found<br>Try a different search term</div>
+          `;
+        } else {
+          // Show default empty state
+          emptyState.innerHTML = `
+            <div class="sidebar-empty-icon">⚡</div>
+            <div>No recent pages yet<br>Browse some sites to see them here</div>
+          `;
+        }
+        
         parentElement.appendChild(emptyState);
         return;
       }
@@ -1455,7 +1498,14 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         
         const titleText = document.createElement('span');
         titleText.className = 'sidebar-title-text';
-        titleText.textContent = tab.title || tab.url;
+        
+        // Apply search highlighting if there's a search query
+        const displayTitle = tab.title || tab.url;
+        if (searchQuery) {
+          titleText.innerHTML = highlightText(displayTitle, searchQuery);
+        } else {
+          titleText.textContent = displayTitle;
+        }
         
         const timeText = document.createElement('span');
         timeText.className = 'sidebar-time';
