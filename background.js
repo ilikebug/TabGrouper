@@ -302,6 +302,31 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
   };
 
   // Utility functions - must be defined inline
+  function isValidUrl(string) {
+    // Check if it's a domain pattern (like example.com, google.com)
+    const domainPattern = /^[a-zA-Z0-9][a-zA-Z0-9-_.]*\.[a-zA-Z]{2,}(\/.*)?$/;
+    
+    // Check if it's already a full URL
+    const urlPattern = /^https?:\/\//i;
+    
+    // Check if it's localhost or IP
+    const localhostPattern = /^(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.).*$/;
+    
+    return urlPattern.test(string) || domainPattern.test(string) || localhostPattern.test(string);
+  }
+  
+  function normalizeUrl(string) {
+    const trimmed = string.trim();
+    
+    // If it already has a protocol, return as is
+    if (/^https?:\/\//i.test(trimmed)) {
+      return trimmed;
+    }
+    
+    // Add https:// for everything else
+    return 'https://' + trimmed;
+  }
+
   async function getSupportedHosts() {
     try {
       const result = await chrome.storage.local.get(CONFIG.STORAGE_KEYS.SUPPORTED_HOSTS);
@@ -1037,7 +1062,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
 
     const input = document.createElement('input');
     input.type = 'text';
-    input.placeholder = '🔍 Search tabs, bookmarks, or hosts...';
+    input.placeholder = '🔍 Search tabs, bookmarks, hosts, or enter URL...';
 
     const listsContainer = document.createElement('div');
     listsContainer.id = 'lists';
@@ -1082,7 +1107,19 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
 
     input.addEventListener('input', (e) => {
       e.stopPropagation();
-      debouncedSearch(e.target.value.toLowerCase());
+      
+      const value = e.target.value.trim();
+      
+      // Check if it looks like a URL and update styling
+      if (value && isValidUrl(value)) {
+        input.style.borderColor = 'rgba(16, 185, 129, 0.5)';
+        input.style.boxShadow = '0 0 0 4px rgba(16, 185, 129, 0.1), 0 8px 24px rgba(0,0,0,0.08)';
+      } else {
+        input.style.borderColor = '';
+        input.style.boxShadow = '';
+      }
+      
+      debouncedSearch(value.toLowerCase());
     });
 
     // Create sidebar
@@ -1187,9 +1224,37 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         return;
       }
       
-      // Prevent other keys from affecting the page
+      // Handle Enter key
       if (event.key === 'Enter') {
         event.preventDefault();
+        
+        const inputValue = event.target.value.trim();
+        if (inputValue) {
+          // Check if input looks like a URL
+          if (isValidUrl(inputValue)) {
+            const normalizedUrl = normalizeUrl(inputValue);
+            console.log('🌐 Opening URL from input:', normalizedUrl);
+            
+            // Open URL in new tab
+            chrome.runtime.sendMessage({
+              action: 'openQuickAccessTab',
+              url: normalizedUrl,
+              clickId: Date.now() + Math.random()
+            });
+            
+            // Close the interface
+            if (searchBox._cleanup) searchBox._cleanup();
+            searchBox.remove();
+            
+            // Restore focus to document body
+            document.body.focus();
+            
+            // Re-enable page scrolling
+            document.body.style.overflow = '';
+            document.documentElement.style.overflow = '';
+            return;
+          }
+        }
       }
     });
 
