@@ -253,13 +253,11 @@ async function addToRecentTabs(tab) {
     
     filteredTabs.unshift(newEntry);
     
-    // Keep only last 30 tabs
-    const limitedTabs = filteredTabs.slice(0, 30);
-    
+    // No limit on count - rely on 24h expiry for cleanup
     await chrome.storage.local.set({
-      [CONFIG.STORAGE_KEYS.RECENT_TABS]: limitedTabs
+      [CONFIG.STORAGE_KEYS.RECENT_TABS]: filteredTabs
     });
-    console.log('Global addToRecentTabs: added', tab.title, 'total count:', limitedTabs.length);
+    console.log('Global addToRecentTabs: added', tab.title, 'total count:', filteredTabs.length);
   } catch (error) {
     console.error('Error adding to recent tabs:', error);
   }
@@ -427,13 +425,11 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       
       filteredTabs.unshift(newEntry);
       
-      // Keep only last 30 tabs
-      const limitedTabs = filteredTabs.slice(0, 30);
-      
+      // No limit on count - rely on 24h expiry for cleanup
       await chrome.storage.local.set({
-        [CONFIG.STORAGE_KEYS.RECENT_TABS]: limitedTabs
+        [CONFIG.STORAGE_KEYS.RECENT_TABS]: filteredTabs
       });
-      console.log('Internal addToRecentTabs: added', tab.title, 'total count:', limitedTabs.length);
+      console.log('Internal addToRecentTabs: added', tab.title, 'total count:', filteredTabs.length);
     } catch (error) {
       console.error('Error adding to recent tabs:', error);
     }
@@ -550,7 +546,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       }
       
       .sidebar-title {
-        font-size: 14px;
+        font-size: 12px;
         font-weight: 700;
         color: #374151;
         margin-bottom: 8px;
@@ -633,7 +629,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       #lists {
         display: flex;
         flex: 1;
-        gap: 24px;
+        gap: 4px;
         overflow: hidden;
       }
       
@@ -658,7 +654,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       }
       
       .section-title {
-        font-size: 14px;
+        font-size: 12px;
         font-weight: 700;
         color: #475569;
         margin-bottom: 12px;
@@ -769,7 +765,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         text-decoration: none !important;
         border: none !important;
         flex: 1;
-        font-size: 14px;
+        font-size: 12px;
         font-weight: 500;
         transition: all 0.2s ease;
       }
@@ -802,9 +798,9 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       }
       
       .folder-title {
-        padding: 10px 14px;
+        padding: 8px 12px;
         font-weight: 600;
-        font-size: 14px;
+        font-size: 12px;
         cursor: pointer;
         display: flex;
         align-items: center;
@@ -819,17 +815,17 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       
       .folder-icon {
         margin-right: 8px;
-        font-size: 14px;
+        font-size: 12px;
       }
       
       .bookmark-link {
         display: flex !important;
         align-items: center !important;
-        padding: 8px 14px !important;
+        padding: 6px 12px !important;
         color: #374151 !important;
         text-decoration: none !important;
         border: none !important;
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 500;
         transition: all 0.2s ease;
         border-bottom: 1px solid rgba(226, 232, 240, 0.2) !important;
@@ -841,7 +837,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       }
       
       .bookmark-path {
-        font-size: 11px;
+        font-size: 10px;
         color: rgba(100, 116, 139, 0.7);
         margin-bottom: 4px;
         padding: 0 14px;
@@ -888,6 +884,27 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         background: rgba(148, 163, 184, 0.6);
       }
       
+      /* Enhanced scrollbar for sidebar */
+      .sidebar-recent-list::-webkit-scrollbar {
+        width: 8px;
+      }
+      
+      .sidebar-recent-list::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 4px;
+        margin: 4px;
+      }
+      
+      .sidebar-recent-list::-webkit-scrollbar-thumb {
+        background: rgba(148, 163, 184, 0.5);
+        border-radius: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      
+      .sidebar-recent-list::-webkit-scrollbar-thumb:hover {
+        background: rgba(148, 163, 184, 0.7);
+      }
+      
       .close-hint {
         position: absolute;
         top: 16px;
@@ -905,15 +922,21 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       .sidebar-recent-list {
         flex: 1;
         overflow-y: auto;
-        padding: 0;
+        overflow-x: hidden;
+        padding: 4px;
         margin: 0;
         list-style: none;
-        max-height: 100%;
+        max-height: calc(100% - 60px); /* Leave space for title */
         display: block;
+        background: rgba(255, 255, 255, 0.7);
+        border-radius: 6px;
+        border: 1px solid rgba(226, 232, 240, 0.4);
+        scrollbar-width: thin;
+        scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
       }
       
       .sidebar-recent-item {
-        margin: 0 0 4px 0;
+        margin: 0 0 2px 0;
         padding: 0;
         border-radius: 8px;
         overflow: hidden;
@@ -924,17 +947,17 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       .sidebar-recent-link {
         display: flex !important;
         align-items: center !important;
-        padding: 8px 12px !important;
+        padding: 6px 10px !important;
         text-decoration: none !important;
         border: none !important;
         color: #374151 !important;
         transition: all 0.2s ease;
         border-radius: 8px;
-        font-size: 13px;
+        font-size: 12px;
         background: rgba(255, 255, 255, 0.5);
         width: 100%;
         box-sizing: border-box;
-        min-height: 32px;
+        min-height: 28px;
       }
       
       .sidebar-recent-link:hover {
@@ -1329,7 +1352,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         return;
       }
 
-      recentTabs.slice(0, 20).forEach((tab, index) => {
+      recentTabs.slice(0, 100).forEach((tab, index) => {
         
         const listItem = document.createElement('li');
         listItem.className = 'sidebar-recent-item';
@@ -1614,10 +1637,31 @@ async function handleActivateTab(request) {
   }
 }
 
+// Track processed clicks to prevent duplicates
+const processedClicks = new Set();
+
 async function handleOpenQuickAccessTab(request, sender, sendResponse) {
   console.log('📨 Background handling Quick Access tab open:', request.url);
   console.log('🆔 Click ID:', request.clickId);
   console.log('🕐 Timestamp:', Date.now());
+  
+  // Check if this click has already been processed
+  if (request.clickId && processedClicks.has(request.clickId)) {
+    console.log('⚠️ Duplicate click detected, ignoring:', request.clickId);
+    if (sendResponse) {
+      sendResponse({ success: false, error: 'Duplicate click' });
+    }
+    return true;
+  }
+  
+  // Mark this click as processed
+  if (request.clickId) {
+    processedClicks.add(request.clickId);
+    // Clean up after 5 seconds to prevent memory leak
+    setTimeout(() => {
+      processedClicks.delete(request.clickId);
+    }, 5000);
+  }
   
   try {
     // Try to activate existing tab first - use broader search
@@ -1641,6 +1685,29 @@ async function handleOpenQuickAccessTab(request, sender, sendResponse) {
       console.log('🆕 Creating new tab for:', request.url);
       const newTab = await chrome.tabs.create({ url: request.url });
       console.log('✅ New tab created:', newTab.id);
+      
+      // Add a small delay and check if Chrome created any additional tabs
+      setTimeout(async () => {
+        try {
+          const allTabsAfter = await chrome.tabs.query({});
+          const duplicateTabs = allTabsAfter.filter(tab => {
+            const normalizeUrl = (url) => {
+              if (!url) return '';
+              return url.replace(/\/$/, '').toLowerCase();
+            };
+            return normalizeUrl(tab.url) === normalizeUrl(request.url) && tab.id !== newTab.id;
+          });
+          
+          if (duplicateTabs.length > 0) {
+            console.log('🗑️ Found duplicate tabs, removing:', duplicateTabs.map(t => t.id));
+            for (const dupTab of duplicateTabs) {
+              await chrome.tabs.remove(dupTab.id);
+            }
+          }
+        } catch (error) {
+          console.error('Error checking for duplicate tabs:', error);
+        }
+      }, 1000); // 1 second delay
     }
     
     if (sendResponse) {
