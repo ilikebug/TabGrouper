@@ -1126,7 +1126,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       } else {
         const groupedTabs = await groupTabsByHost(alltabs);
         displayGroupedTabs(groupedTabs, tabList);
-        displayBookmarks(bookmarkTreeNodes, bookmarkList);
+        displayBookmarks(bookmarkTreeNodes[0]?.children || [], bookmarkList);
         displaySidebarRecentTabs(recentTabsList);
         // Reset sidebar title when not searching
         searchBox._sidebarTitle.innerHTML = '⚡ Quick Access';
@@ -1165,7 +1165,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     recentTabsList.className = 'sidebar-recent-list';
 
     // Display initial data
-    displayBookmarks(bookmarkTreeNodes, bookmarkList);
+    displayBookmarks(bookmarkTreeNodes[0]?.children || [], bookmarkList);
     displaySidebarRecentTabs(recentTabsList);
 
     // Assemble main interface
@@ -1397,7 +1397,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
 
           const icon = document.createElement('img');
           icon.className = 'favicon';
-          icon.src = getFaviconUrl(tab.url);
+          icon.src = tab.favIconUrl || getFaviconUrl(tab.url);
           icon.onerror = () => {
             icon.style.display = 'none';
             const fallback = document.createElement('span');
@@ -1602,7 +1602,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
           const subList = document.createElement('ul');
           subList.style.paddingLeft = '0';
           
-          let isExpanded = level === 0; // Only expand root level by default
+          let isExpanded = level <= 0; // Expand root and first level by default
           subList.style.display = isExpanded ? 'block' : 'none';
 
           folderTitle.addEventListener('click', () => {
@@ -1625,7 +1625,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
 
           const icon = document.createElement('img');
           icon.className = 'favicon';
-          icon.src = getFaviconUrl(node.url);
+          icon.src = node.favIconUrl || getFaviconUrl(node.url);
           icon.onerror = () => {
             icon.style.display = 'none';
             const fallback = document.createElement('span');
