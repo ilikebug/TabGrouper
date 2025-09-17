@@ -1,863 +1,194 @@
-const groupTabsByHost = async (tabs) => {
-  const groupedTabs = {};
+// Service worker for TabGrouper
+console.log('TabGrouper background script loading...');
 
-  // 使用 for...of 替代 forEach 以正确处理异步操作
+// Configuration constants
+const CONFIG = {
+  UI: {
+    SEARCH_BOX_ID: 'tab-grouper',
+    MIN_WIDTH: 600,
+    MIN_HEIGHT: 400,
+    WIDTH_PERCENTAGE: 40,
+    HEIGHT_PERCENTAGE: 50,
+    INPUT_FOCUS_DELAY: 0,
+    MESSAGE_HIDE_DELAY: 2000
+  },
+  
+  ICONS: [
+    "🌟", "🚀", "📚", "🎨", "🎵", "📷", "💼", "🔧", "🔍", "🍀",
+    "🔥", "🌈", "⚡", "🌍", "🌙", "☀️", "🌊", "🍎", "🍔", "🎁",
+    "🎉", "🎈", "🎯", "🏆", "🏠", "🚗", "✈️", "🛒", "💡"
+  ],
+  
+  STORAGE_KEYS: {
+    SUPPORTED_HOSTS: 'supportedHosts'
+  },
+  
+  DEFAULT_ICONS: {
+    FOLDER: '📂',
+    BOOKMARK: '⭐️',
+    SEARCH: '🔍',
+    DELETE: '✖'
+  }
+};
+
+const COMMANDS = {
+  OPEN_SEARCH_BOX: 'open-search-box'
+};
+
+const ACTIONS = {
+  ACTIVATE_TAB: 'activateTab',
+  REMOVE_TAB: 'removeTab',
+  REFRESH_GROUPED_TABS: 'refreshGroupedTabs',
+  SEARCH: 'search'
+};
+
+// Utility functions
+async function getSupportedHosts() {
+  try {
+    const result = await chrome.storage.local.get(CONFIG.STORAGE_KEYS.SUPPORTED_HOSTS);
+    return result[CONFIG.STORAGE_KEYS.SUPPORTED_HOSTS] || {};
+  } catch (error) {
+    console.error('Error getting supported hosts:', error);
+    return {};
+  }
+}
+
+function extractHostFromUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    let host = urlObj.hostname.split('.')[0];
+    if (host === 'www') {
+      host = urlObj.hostname.split('.')[1];
+    }
+    return host;
+  } catch (e) {
+    console.warn('Invalid URL:', url);
+    return 'unknown';
+  }
+}
+
+function mapUrlToHost(url, supportedHosts = {}) {
+  let host = extractHostFromUrl(url);
+  
+  if (supportedHosts) {
+    for (const [key, value] of Object.entries(supportedHosts)) {
+      if (url.includes(key)) {
+        host = value;
+        break;
+      }
+    }
+  }
+  
+  return host;
+}
+
+async function groupTabsByHost(tabs) {
+  const groupedTabs = {};
+  const supportedHosts = await getSupportedHosts();
+
   for (const tab of tabs) {
     try {
-      const url = new URL(tab.url);
-      let host = url.hostname.split(".")[0];
-      if (host == "www") {
-        host = url.hostname.split(".")[1];
-      }
-
-      const supportedHosts = await chrome.storage.local.get("supportedHosts");
-      if (supportedHosts?.supportedHosts) {
-        for (const [key, value] of Object.entries(
-          supportedHosts.supportedHosts
-        )) {
-          if (tab.url.includes(key)) {
-            host = value;
-            break;
-          }
-        }
-      }
-
+      const host = mapUrlToHost(tab.url, supportedHosts);
+      
       if (!groupedTabs[host]) {
         groupedTabs[host] = [];
       }
       groupedTabs[host].push(tab);
     } catch (e) {
-      console.log("Invalid URL:", tab.url);
+      console.warn('Error processing tab:', tab.url, e);
     }
   }
 
   return groupedTabs;
-};
+}
 
-// 监听快捷键命令
-chrome.commands.onCommand.addListener((command) => {
-  if (command === "open-search-box") {
-    chrome.tabs.query({}, (alltabs) => {
-      chrome.tabs.query({ currentWindow: true, active: true }, (tabs) => {
-        if (tabs.length > 0 && !tabs[0].url.startsWith("chrome://")) {
-          chrome.bookmarks.getTree((bookmarkTreeNodes) => {
-            chrome.scripting
-              .executeScript({
-                target: { tabId: tabs[0].id },
-                function: tabGrouper,
-                args: [bookmarkTreeNodes, alltabs],
-              })
-              .catch((error) => console.log("Script execution error:", error));
-          });
-        }
-      });
-    });
-  }
-});
+function getAllTabs() {
+  return new Promise((resolve) => {
+    chrome.tabs.query({}, resolve);
+  });
+}
 
-// 监听消息以激活标签页
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "activateTab") {
-    chrome.tabs.update(request.tabId, { active: true });
-  } else if (request.action === "removeTab") {
-    chrome.tabs.remove(request.tabId, () => {
-      sendResponse({ success: true });
-    });
-    return true; // 表示异步响应
-  } else if (request.action === "refreshGroupedTabs") {
-    chrome.tabs.query({}, (alltabs) => {
-      chrome.tabs.query({ currentWindow: true, active: true }, (tabs) => {
-        if (tabs.length > 0) {
-          chrome.bookmarks.getTree((bookmarkTreeNodes) => {
-            chrome.scripting
-              .executeScript({
-                target: { tabId: tabs[0].id },
-                function: tabGrouper,
-                args: [bookmarkTreeNodes, alltabs],
-              })
-              .catch((error) => console.log("Script execution error:", error));
-          });
-        }
-      });
-    });
-  } else if (request.action === "search") {
-    searchTabsAndBookmarks(request.query)
-      .then((results) => sendResponse(results))
-      .catch((error) => console.error("搜索错误:", error));
-    return true; // 保持消息通道开放以进行异步响应
-  }
-});
-
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.tabs.query({}, (alltabs) => {
-    const groupedTabs = groupTabsByHost(alltabs);
-    Object.keys(groupedTabs).forEach((host) => {
-      chrome.tabs.group(
-        {
-          tabIds: groupedTabs[host].map((tab) => tab.id),
-        },
-        (groupId) => {
-          chrome.tabGroups.update(groupId, {
-            title: host,
-          });
-        }
-      );
+function getActiveTab() {
+  return new Promise((resolve) => {
+    chrome.tabs.query({ currentWindow: true, active: true }, (tabs) => {
+      resolve(tabs.length > 0 ? tabs[0] : null);
     });
   });
-});
+}
 
-// 监听标签页更新
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  chrome.tabs.query({}, async () => {
-    if (changeInfo.status === "complete") {
-      // generate host
-      const supportedHosts = await chrome.storage.local.get("supportedHosts");
-      const url = new URL(tab.url);
-      let host = url.hostname.split(".")[0];
-      if (host == "www") {
-        host = url.hostname.split(".")[1];
-      }
-
-      if (supportedHosts != undefined) {
-        // 修改成 URL 包含 supportedHosts 的 host
-        for (const [key, value] of Object.entries(
-          supportedHosts.supportedHosts
-        )) {
-          if (tab.url.includes(key)) {
-            host = value;
-            break;
-          }
-        }
-      }
-
-      var groupExists = false;
-      var existGroupID = 0;
-      // 使用 await 等待 Promise 完成
-      const groups = await chrome.tabGroups.query({});
-      groups.forEach((group) => {
-        if (group.title === host) {
-          groupExists = true;
-          existGroupID = group.id;
-        }
-      });
-
-      if (!groupExists) {
-        chrome.tabs.group(
-          {
-            tabIds: [tabId],
-          },
-          (groupId) => {
-            chrome.tabGroups.update(groupId, {
-              title: host,
-            });
-          }
-        );
-      } else {
-        chrome.tabs.group({
-          tabIds: [tabId],
-          groupId: existGroupID,
-        });
-      }
-    }
+function getBookmarkTree() {
+  return new Promise((resolve) => {
+    chrome.bookmarks.getTree(resolve);
   });
-});
+}
 
-// 构建标签页分组器
-async function tabGrouper(bookmarkTreeNodes, alltabs) {
-  // 创建搜索框
-  const createSearchBox = async (bookmarkTreeNodes, alltabs) => {
-    const searchBox = document.createElement("div");
-    searchBox.id = "tab-grouper";
-    const shadow = searchBox.attachShadow({ mode: "open" });
+function activateTab(tabId) {
+  chrome.tabs.update(tabId, { active: true });
+}
 
-    const style = document.createElement("style");
-    style.textContent = `
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      color: #333;
-    }
-    
-    #container {
-      position: fixed;
-      top: 40%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      z-index: 10000;
-      background-color: #ffffff;
-      border: 1px solid #ccc;
-      border-radius: 12px;
-      padding: 20px;
-      box-shadow: 0 6px 12px rgba(0,0,0,0.3);
-      width: 40%;
-      min-width: 600px;
-      height: 50%;
-      min-height: 400px;
-      display: flex;
-      flex-direction: column;
-      font-size: 14px !important;
-      line-height: 1.4 !important;
-    }
-    
-    input {
-      width: 100%;
-      padding: 12px;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      box-sizing: border-box;
-      background-color: #ffffff !important;
-      margin-bottom: 15px;
-      font-size: 14px !important;
-      outline: none;
-      color: #000000 !important;
-      -webkit-text-fill-color: #000000 !important;
-      opacity: 1 !important;
-    }
-    
-    input::placeholder {
-      color: #999999 !important;
-      -webkit-text-fill-color: #999999 !important;
-      opacity: 1 !important;
-    }
-    
-    input:focus {
-      border-color: #4a90e2;
-      box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
-      color: #000000 !important;
-      -webkit-text-fill-color: #000000 !important;
-    }
-    
-    #lists {
-      display: flex;
-      flex-direction: row;
-      flex: 1;
-      overflow: auto;
-      gap: 20px;
-    }
-    
-    ul {
-      list-style-type: none !important;
-      padding: 0 !important;
-      margin: 0 !important;
-      max-height: 100%;
-      overflow-y: auto;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-    }
-    
-    a {
-      display: flex !important;
-      align-items: center !important;
-      padding: 5px 0 !important;
-      color: #333 !important;
-      text-decoration: none !important;
-      border-bottom: 1px solid #ddd !important;
-      font-size: 14px !important;
-    }
-    
-    a:hover {
-      background-color: rgba(74, 144, 226, 0.1);
-    }
-    
-    img {
-      width: 16px !important;
-      height: 16px !important;
-      margin-right: 5px !important;
-      flex-shrink: 0 !important;
-    }
-    
-    button {
-      all: unset;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      background-color: #f0f0f0;
-      color: #666;
-      font-size: 12px;
-      margin-right: 8px;
-      transition: all 0.2s;
-    }
-    
-    button:hover {
-      background-color: #e0e0e0;
-      color: #333;
-    }
-    
-    ::-webkit-scrollbar {
-      width: 8px;
-      height: 8px;
-    }
-    
-    ::-webkit-scrollbar-track {
-      background: #f1f1f1;
-      border-radius: 4px;
-    }
-    
-    ::-webkit-scrollbar-thumb {
-      background: #ccc;
-      border-radius: 4px;
-    }
-    
-    ::-webkit-scrollbar-thumb:hover {
-      background: #999;
-    }
-`;
-
-    const container = document.createElement("div");
-    container.id = "container";
-
-    const input = document.createElement("input");
-    input.type = "text";
-    input.placeholder = "Search...";
-
-    // 添加这些样式确保搜索框始终可见且在顶层
-    input.style.position = "relative";
-    input.style.zIndex = "10001";
-
-    const listsContainer = document.createElement("div");
-    listsContainer.id = "lists";
-
-    const bookmarkList = document.createElement("ul");
-    const tabList = document.createElement("ul");
-    tabList.style.marginLeft = "20px";
-
-    // 显示分组的标签页
-    const groupedTabs = await groupTabsByHost(alltabs);
-    displayGroupedTabs(groupedTabs, tabList);
-
-    // 监听输入以过滤书签
-    input.addEventListener("input", async () => {
-      const query = input.value.toLowerCase();
-      if (query) {
-        chrome.runtime.sendMessage(
-          { action: "search", query: query },
-          async (results) => {
-            const tabs = results.filter((item) => item.type === "tab");
-            const bookmarks = results.filter(
-              (item) => item.type === "bookmark"
-            );
-
-            // 更新标签页列表，保持分组显示
-            const groupedTabs = await groupTabsByHost(tabs);
-            displayGroupedTabs(groupedTabs, tabList);
-
-            // 更新书签列表，显示完整路径
-            bookmarkList.innerHTML = "";
-            displayBookmarks(bookmarks, bookmarkList, true); // true 表示这是搜索结果
-          }
-        );
-      } else {
-        displayGroupedTabs(await groupTabsByHost(alltabs), tabList);
-        displayBookmarks(bookmarkTreeNodes, bookmarkList);
-      }
+function removeTab(tabId) {
+  return new Promise((resolve) => {
+    chrome.tabs.remove(tabId, () => {
+      resolve(true);
     });
-
-    // 显示书签
-    displayBookmarks(bookmarkTreeNodes, bookmarkList);
-
-    listsContainer.appendChild(bookmarkList);
-    listsContainer.appendChild(tabList);
-
-    container.appendChild(input);
-    container.appendChild(listsContainer);
-
-    shadow.appendChild(style);
-    shadow.appendChild(container);
-    document.body.appendChild(searchBox);
-
-    // 确保搜索框获得焦点
-    setTimeout(() => {
-      input.focus();
-      // 阻止其他元素获取焦点
-      input.addEventListener("blur", (e) => {
-        setTimeout(() => input.focus(), 0);
-      });
-    }, 0);
-
-    // 修改键盘事件监听，确保在搜索框中按 Esc 键时关闭
-    input.addEventListener("keydown", function (event) {
-      if (event.key === "Escape") {
-        searchBox.remove();
-      }
-      // 阻止事件冒泡，避免触发页面上的其他快捷键
-      event.stopPropagation();
-    });
-  };
-
-  // 分组标签页
-  const groupTabsByHost = async (tabs) => {
-    const groupedTabs = {};
-
-    // 使用 for...of 替代 forEach 以正确处理异步操作
-    for (const tab of tabs) {
-      try {
-        const url = new URL(tab.url);
-        let host = url.hostname.split(".")[0];
-        if (host == "www") {
-          host = url.hostname.split(".")[1];
-        }
-
-        const supportedHosts = await chrome.storage.local.get("supportedHosts");
-        if (supportedHosts?.supportedHosts) {
-          for (const [key, value] of Object.entries(
-            supportedHosts.supportedHosts
-          )) {
-            if (tab.url.includes(key)) {
-              host = value;
-              break;
-            }
-          }
-        }
-
-        if (!groupedTabs[host]) {
-          groupedTabs[host] = [];
-        }
-        groupedTabs[host].push(tab);
-      } catch (e) {
-        console.log("Invalid URL:", tab.url);
-      }
-    }
-
-    return groupedTabs;
-  };
-
-  // 显示分组的标签页
-  const displayGroupedTabs = (groupedTabs, parentElement) => {
-    parentElement.innerHTML = "";
-    if (Object.keys(groupedTabs).length === 0) {
-      const noResults = document.createElement("li");
-      noResults.textContent = "No matching tab found.";
-      noResults.style.padding = "10px";
-      noResults.style.color = "#666";
-      parentElement.appendChild(noResults);
-      return;
-    }
-
-    const icons = [
-      "🌟",
-      "🚀",
-      "📚",
-      "🎨",
-      "🎵",
-      "📷",
-      "💼",
-      "🔧",
-      "🔍",
-      "🍀",
-      "🔥",
-      "🌈",
-      "⚡",
-      "🌍",
-      "🌙",
-      "☀️",
-      "🌊",
-      "🍎",
-      "🍔",
-      "🎁",
-      "🎉",
-      "🎈",
-      "🎯",
-      "🏆",
-      "🏠",
-      "🚗",
-      "✈️",
-      "🛒",
-      "💡",
-    ];
-    Object.keys(groupedTabs).forEach((host) => {
-      const hostItem = document.createElement("li");
-      const hostTitle = document.createElement("span");
-      const randomIcon = icons[Math.floor(Math.random() * icons.length)];
-      hostTitle.textContent = `${randomIcon} ${host}`;
-      hostTitle.style.fontWeight = "bold";
-      hostTitle.style.cursor = "pointer";
-      hostTitle.style.display = "block";
-      hostTitle.style.padding = "5px 0";
-      hostTitle.style.borderBottom = "1px solid #ddd";
-      hostTitle.style.color = "#FF4500";
-
-      const subList = document.createElement("ul");
-      subList.style.listStyleType = "none";
-      subList.style.paddingLeft = "20px";
-      subList.style.display = "block";
-
-      hostTitle.addEventListener("click", () => {
-        subList.style.display =
-          subList.style.display === "none" ? "block" : "none";
-      });
-
-      groupedTabs[host].forEach((tab) => {
-        const listItem = document.createElement("li");
-        listItem.style.display = "flex";
-        listItem.style.alignItems = "center";
-
-        // 添加精致小巧的圆形删除按钮
-        const deleteButton = document.createElement("button");
-        deleteButton.textContent = "✖";
-        deleteButton.style.marginRight = "10px";
-        deleteButton.style.border = "none";
-        deleteButton.style.background = "transparent";
-        deleteButton.style.color = "#888"; // 灰色
-        deleteButton.style.cursor = "pointer";
-        deleteButton.style.fontSize = "12px";
-        deleteButton.style.padding = "0";
-        deleteButton.style.width = "20px";
-        deleteButton.style.height = "20px";
-        deleteButton.style.borderRadius = "50%";
-        deleteButton.style.display = "flex";
-        deleteButton.style.justifyContent = "center";
-        deleteButton.style.alignItems = "center";
-        deleteButton.style.backgroundColor = "#f0f0f0"; // 背景灰色
-
-        deleteButton.addEventListener("click", (event) => {
-          event.stopPropagation();
-          chrome.runtime.sendMessage(
-            {
-              action: "removeTab",
-              tabId: tab.id,
-            },
-            () => {
-              const openBox = document.getElementById("tab-grouper");
-              if (openBox) {
-                openBox.remove();
-              }
-              // 重新查询所有标签页并刷新列表
-              chrome.runtime.sendMessage({
-                action: "refreshGroupedTabs",
-              });
-            }
-          );
-        });
-
-        const link = document.createElement("a");
-        link.href = tab.url;
-        link.textContent = tab.title || "无标题标签页";
-        link.style.flex = "1";
-        link.style.display = "flex";
-        link.style.alignItems = "center";
-        link.style.padding = "5px 0";
-        link.style.color = "#000";
-        link.style.textDecoration = "none";
-        link.style.borderBottom = "1px solid #ddd";
-
-        const icon = document.createElement("img");
-        icon.src = getFaviconUrl(tab.url);
-        icon.style.width = "16px";
-        icon.style.height = "16px";
-        icon.style.marginRight = "5px";
-        icon.onerror = () => {
-          icon.style.display = "none";
-          const starIcon = document.createElement("span");
-          starIcon.textContent = "🔍";
-          starIcon.style.marginRight = "5px";
-          link.prepend(starIcon);
-        };
-
-        link.prepend(icon);
-
-        link.addEventListener("click", (event) => {
-          event.preventDefault();
-          chrome.runtime.sendMessage({
-            action: "activateTab",
-            tabId: tab.id,
-          });
-          const openBox = document.getElementById("tab-grouper");
-          if (openBox) {
-            openBox.remove();
-          }
-        });
-
-        listItem.appendChild(deleteButton); // 将删除按钮添加到列表项的最前面
-        listItem.appendChild(link);
-        subList.appendChild(listItem);
-      });
-
-      hostItem.appendChild(hostTitle);
-      hostItem.appendChild(subList);
-      parentElement.appendChild(hostItem);
-    });
-  };
-
-  // 获取网站图标URL
-  const getFaviconUrl = (url) => {
-    try {
-      const urlObj = new URL(url);
-      return `${urlObj.origin}/favicon.ico`;
-    } catch (e) {
-      const defaultFavicon = `https://www.google.com/s2/favicons?domain=${urlObj.hostname}`;
-      return defaultFavicon;
-    }
-  };
-
-  // 过滤签
-  const filterBookmarks = (query, nodes, parentElement) => {
-    parentElement.innerHTML = "";
-    let hasMatches = false;
-    nodes.forEach((node) => {
-      if (node.children) {
-        const subList = document.createElement("ul");
-        subList.style.listStyleType = "none";
-        subList.style.paddingLeft = "20px";
-        subList.style.display = "block";
-
-        const folderMatches = node.title.toLowerCase().includes(query);
-        const childMatches = filterBookmarks(query, node.children, subList);
-
-        if (folderMatches || childMatches) {
-          const listItem = document.createElement("li");
-          const folderTitle = document.createElement("span");
-          folderTitle.style.display = "flex";
-          folderTitle.style.alignItems = "center";
-
-          const folderIcon = document.createElement("span");
-          folderIcon.textContent = "📂";
-          folderIcon.style.marginRight = "5px";
-
-          const folderText = document.createElement("span");
-          folderText.textContent = node.title || "⭐️ Bookmarks Tools";
-          folderText.style.fontWeight = "bold";
-          folderText.style.cursor = "pointer";
-          folderText.style.display = "block";
-          folderText.style.padding = "5px 0";
-          folderText.style.borderBottom = "1px solid #ddd";
-
-          folderTitle.appendChild(folderIcon);
-          folderTitle.appendChild(folderText);
-
-          folderText.addEventListener("click", () => {
-            subList.style.display =
-              subList.style.display === "none" ? "block" : "none";
-          });
-
-          listItem.appendChild(folderTitle);
-          listItem.appendChild(subList);
-          parentElement.appendChild(listItem);
-          hasMatches = true;
-        }
-      } else if (node.title.toLowerCase().includes(query)) {
-        const listItem = document.createElement("li");
-        const link = document.createElement("a");
-        link.href = node.url;
-        link.textContent = node.title || "Untitled Bookmark";
-        link.style.display = "flex";
-        link.style.alignItems = "center";
-        link.style.padding = "5px 0";
-        link.style.color = "#000";
-        link.style.textDecoration = "none";
-        link.style.borderBottom = "1px solid #ddd";
-
-        const icon = document.createElement("img");
-        icon.src = getFaviconUrl(node.url);
-        icon.style.width = "16px";
-        icon.style.height = "16px";
-        icon.style.marginRight = "5px";
-        icon.onerror = () => {
-          icon.style.display = "none";
-          const starIcon = document.createElement("span");
-          starIcon.textContent = "⭐️";
-          starIcon.style.marginRight = "5px";
-          link.prepend(starIcon);
-        };
-
-        link.prepend(icon);
-
-        link.addEventListener("click", (event) => {
-          event.preventDefault();
-          window.open(link.href, "_blank");
-          const openBox = document.getElementById("tab-grouper");
-          if (openBox) {
-            openBox.remove();
-          }
-        });
-
-        listItem.appendChild(link);
-        parentElement.appendChild(listItem);
-        hasMatches = true;
-      }
-    });
-    return hasMatches;
-  };
-
-  // 显示书签
-  const displayBookmarks = (
-    nodes,
-    parentElement,
-    isSearchResult = false,
-    level = 0
-  ) => {
-    parentElement.innerHTML = "";
-
-    if (
-      nodes.length === 0 ||
-      (nodes[0].children && nodes[0].children.length === 0)
-    ) {
-      const noResults = document.createElement("li");
-      noResults.textContent = "No matching bookmarks found.";
-      noResults.style.padding = "10px";
-      noResults.style.color = "#666";
-      parentElement.appendChild(noResults);
-      return;
-    }
-
-    nodes.forEach((node) => {
-      const listItem = document.createElement("li");
-      listItem.style.marginLeft = `${level * 5}px`; // 每个层级缩进5px
-
-      if (isSearchResult && node.path) {
-        const pathElement = document.createElement("div");
-        pathElement.style.fontSize = "12px";
-        pathElement.style.color = "#666";
-        pathElement.style.marginBottom = "3px";
-        pathElement.textContent = `📂 ${node.path.join(" > ")}`;
-        listItem.appendChild(pathElement);
-      }
-
-      if (node.children) {
-        const folderTitle = document.createElement("span");
-        folderTitle.style.display = "flex";
-        folderTitle.style.alignItems = "center";
-
-        const folderIcon = document.createElement("span");
-        folderIcon.textContent = "📂";
-        folderIcon.style.marginRight = "5px";
-
-        const folderText = document.createElement("span");
-        folderText.textContent = node.title || "⭐️ Bookmarks Tools";
-        folderText.style.fontWeight = "bold";
-        folderText.style.cursor = "pointer";
-        folderText.style.display = "block";
-        folderText.style.padding = "5px 0";
-        folderText.style.borderBottom = "1px solid #ddd";
-        folderText.style.color = "blue";
-
-        folderTitle.appendChild(folderIcon);
-        folderTitle.appendChild(folderText);
-
-        const subList = document.createElement("ul");
-        subList.style.listStyleType = "none";
-        subList.style.padding = "0"; // 移除默认padding
-        subList.style.display = "block";
-
-        folderText.addEventListener("click", () => {
-          subList.style.display =
-            subList.style.display === "none" ? "block" : "none";
-        });
-
-        listItem.appendChild(folderTitle);
-        listItem.appendChild(subList);
-        displayBookmarks(node.children, subList, false, level + 1); // 递归调用时增加层级
-      } else {
-        const link = document.createElement("a");
-        link.href = node.url;
-        link.textContent = node.title || "无标题书签";
-        link.style.display = "flex";
-        link.style.alignItems = "center";
-        link.style.padding = "5px 0";
-        link.style.color = "black";
-        link.style.textDecoration = "none";
-        link.style.borderBottom = "1px solid #ddd";
-
-        const icon = document.createElement("img");
-        icon.src = getFaviconUrl(node.url);
-        icon.style.width = "16px";
-        icon.style.height = "16px";
-        icon.style.marginRight = "5px";
-        icon.onerror = () => {
-          icon.style.display = "none";
-          const starIcon = document.createElement("span");
-          starIcon.textContent = "⭐️";
-          starIcon.style.marginRight = "5px";
-          link.prepend(starIcon);
-        };
-
-        link.prepend(icon);
-
-        link.addEventListener("click", (event) => {
-          event.preventDefault();
-          window.open(link.href, "_blank");
-          const openBox = document.getElementById("tab-grouper");
-          if (openBox) {
-            openBox.remove();
-          }
-        });
-
-        listItem.appendChild(link);
-      }
-      parentElement.appendChild(listItem);
-    });
-  };
-
-  const existingBox = document.getElementById("tab-grouper");
-  if (existingBox) {
-    existingBox.remove();
-  } else {
-    createSearchBox(bookmarkTreeNodes, alltabs);
-  }
+  });
 }
 
 async function searchTabsAndBookmarks(query) {
-  // 搜索标签页
+  // Search tabs
   const tabs = await chrome.tabs.query({});
-  const matchedTabs = tabs.filter(
-    (tab) =>
-      tab.title.toLowerCase().includes(query.toLowerCase()) ||
-      tab.url.toLowerCase().includes(query.toLowerCase())
+  const lowerQuery = query.toLowerCase();
+  
+  const matchedTabs = tabs.filter(tab =>
+    tab.title.toLowerCase().includes(lowerQuery) ||
+    tab.url.toLowerCase().includes(lowerQuery)
   );
 
+  // Also search by host names
   const groupedTabs = await groupTabsByHost(tabs);
-  Object.keys(groupedTabs).forEach((host) => {
-    if (host.toLowerCase().includes(query.toLowerCase())) {
-      // judge if the host is in the matchedTabs
-      const isHostInMatchedTabs = matchedTabs.some(
-        (tab) =>
-          tab.title.toLowerCase().includes(query.toLowerCase()) ||
-          tab.url.toLowerCase().includes(query.toLowerCase())
+  for (const [host, hostTabs] of Object.entries(groupedTabs)) {
+    if (host.toLowerCase().includes(lowerQuery)) {
+      const isHostInMatchedTabs = matchedTabs.some(tab =>
+        tab.title.toLowerCase().includes(lowerQuery) ||
+        tab.url.toLowerCase().includes(lowerQuery)
       );
+      
       if (!isHostInMatchedTabs) {
-        matchedTabs.push(...groupedTabs[host]);
+        matchedTabs.push(...hostTabs);
       }
     }
-  });
+  }
 
-  // 搜索收藏夹并保持完整路径
+  // Search bookmarks
   const bookmarks = await chrome.bookmarks.search(query);
   const bookmarksWithPath = await Promise.all(
-    bookmarks.map(async (bookmark) => {
+    bookmarks.map(async bookmark => {
       const path = await getBookmarkPath(bookmark.id);
       return {
-        type: "bookmark",
+        type: 'bookmark',
         id: bookmark.id,
         title: bookmark.title,
         url: bookmark.url,
-        path: path, // 包含完整的文件夹路径
+        path: path
       };
     })
   );
 
-  // 合并结果
   const results = [
-    ...matchedTabs.map((tab) => ({
-      type: "tab",
+    ...matchedTabs.map(tab => ({
+      type: 'tab',
       id: tab.id,
       title: tab.title,
       url: tab.url,
       favIconUrl: tab.favIconUrl,
-      groupId: tab.groupId, // 保存标签页组ID
+      groupId: tab.groupId
     })),
-    ...bookmarksWithPath,
+    ...bookmarksWithPath
   ];
 
   return results;
 }
 
-// 添加获取书签路径的辅助函数
 async function getBookmarkPath(bookmarkId) {
   const getNode = async (id) => {
     const nodes = await chrome.bookmarks.get(id);
@@ -876,3 +207,1054 @@ async function getBookmarkPath(bookmarkId) {
 
   return path;
 }
+
+// Tab grouper main function - will be injected as content script
+// This function will be stringified and injected, so it must be self-contained
+function tabGrouper(bookmarkTreeNodes, alltabs) {
+  console.log('tabGrouper function started');
+  
+  // All configuration and utilities must be defined within this function
+  const CONFIG = {
+    UI: {
+      SEARCH_BOX_ID: 'tab-grouper',
+      MIN_WIDTH: 600,
+      MIN_HEIGHT: 400,
+      WIDTH_PERCENTAGE: 40,
+      HEIGHT_PERCENTAGE: 50,
+      INPUT_FOCUS_DELAY: 0
+    },
+    ICONS: [
+      "🌟", "🚀", "📚", "🎨", "🎵", "📷", "💼", "🔧", "🔍", "🍀",
+      "🔥", "🌈", "⚡", "🌍", "🌙", "☀️", "🌊", "🍎", "🍔", "🎁",
+      "🎉", "🎈", "🎯", "🏆", "🏠", "🚗", "✈️", "🛒", "💡"
+    ],
+    STORAGE_KEYS: { SUPPORTED_HOSTS: 'supportedHosts' },
+    DEFAULT_ICONS: { FOLDER: '📂', BOOKMARK: '⭐️', SEARCH: '🔍', DELETE: '✖' }
+  };
+  
+  const ACTIONS = {
+    ACTIVATE_TAB: 'activateTab',
+    REMOVE_TAB: 'removeTab',
+    REFRESH_GROUPED_TABS: 'refreshGroupedTabs',
+    SEARCH: 'search'
+  };
+
+  // Utility functions - must be defined inline
+  async function getSupportedHosts() {
+    try {
+      const result = await chrome.storage.local.get(CONFIG.STORAGE_KEYS.SUPPORTED_HOSTS);
+      return result[CONFIG.STORAGE_KEYS.SUPPORTED_HOSTS] || {};
+    } catch (error) {
+      console.error('Error getting supported hosts:', error);
+      return {};
+    }
+  }
+
+  function extractHostFromUrl(url) {
+    try {
+      const urlObj = new URL(url);
+      let host = urlObj.hostname.split('.')[0];
+      if (host === 'www') {
+        host = urlObj.hostname.split('.')[1];
+      }
+      return host;
+    } catch (e) {
+      console.warn('Invalid URL:', url);
+      return 'unknown';
+    }
+  }
+
+  function mapUrlToHost(url, supportedHosts = {}) {
+    let host = extractHostFromUrl(url);
+    
+    if (supportedHosts) {
+      for (const [key, value] of Object.entries(supportedHosts)) {
+        if (url.includes(key)) {
+          host = value;
+          break;
+        }
+      }
+    }
+    
+    return host;
+  }
+
+  async function groupTabsByHost(tabs) {
+    const groupedTabs = {};
+    const supportedHosts = await getSupportedHosts();
+
+    for (const tab of tabs) {
+      try {
+        const host = mapUrlToHost(tab.url, supportedHosts);
+        
+        if (!groupedTabs[host]) {
+          groupedTabs[host] = [];
+        }
+        groupedTabs[host].push(tab);
+      } catch (e) {
+        console.warn('Error processing tab:', tab.url, e);
+      }
+    }
+
+    return groupedTabs;
+  }
+
+  function getFaviconUrl(url) {
+    try {
+      const urlObj = new URL(url);
+      return `${urlObj.origin}/favicon.ico`;
+    } catch (e) {
+      try {
+        const urlObj = new URL(url);
+        return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}`;
+      } catch (error) {
+        return 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="%23ccc"/></svg>';
+      }
+    }
+  }
+
+  function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+      const later = () => {
+        clearTimeout(timeout);
+        func(...args);
+      };
+      clearTimeout(timeout);
+      timeout = setTimeout(later, wait);
+    };
+  }
+
+  // Create search box function
+  async function createSearchBox(bookmarkTreeNodes, alltabs) {
+    const searchBox = document.createElement('div');
+    searchBox.id = CONFIG.UI.SEARCH_BOX_ID;
+    const shadow = searchBox.attachShadow({ mode: 'open' });
+
+    // Create overlay for complete isolation
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+
+    // Create modern styles
+    const style = document.createElement('style');
+    style.textContent = `
+      * {
+        margin: 0; padding: 0; box-sizing: border-box;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      }
+      
+      .overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 99999;
+        background: rgba(0, 0, 0, 0.3);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: fadeIn 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        will-change: opacity;
+        transform: translateZ(0);
+      }
+      
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+
+      #container {
+        position: relative;
+        z-index: 100000;
+        background: linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(248,250,252,0.95) 100%);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 24px;
+        padding: 24px;
+        box-shadow: 
+          0 20px 60px rgba(0,0,0,0.15),
+          0 8px 32px rgba(0,0,0,0.08),
+          inset 0 1px 0 rgba(255,255,255,0.9);
+        width: 75vw;
+        max-width: 900px;
+        min-width: 650px;
+        height: 70vh;
+        max-height: 650px;
+        min-height: 500px;
+        display: flex;
+        flex-direction: column;
+        animation: slideIn 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        will-change: transform, opacity;
+        transform: translateZ(0);
+      }
+      
+      @keyframes slideIn {
+        from {
+          opacity: 0;
+          transform: translateY(-20px) scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+      
+      .header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+      }
+      
+      .logo {
+        font-size: 20px;
+        font-weight: 700;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-right: 12px;
+      }
+      
+      .subtitle {
+        font-size: 14px;
+        color: rgba(100, 116, 139, 0.8);
+        font-weight: 500;
+      }
+      
+      input {
+        width: 100%;
+        padding: 16px 20px;
+        border: 2px solid transparent;
+        border-radius: 16px;
+        background: rgba(248, 250, 252, 0.8);
+        font-size: 16px !important;
+        font-weight: 500;
+        outline: none;
+        color: #1e293b !important;
+        -webkit-text-fill-color: #1e293b !important;
+        opacity: 1 !important;
+        margin-bottom: 20px;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 
+          0 4px 12px rgba(0,0,0,0.05),
+          inset 0 1px 0 rgba(255,255,255,0.9);
+      }
+      
+      input::placeholder {
+        color: rgba(100, 116, 139, 0.6) !important;
+        -webkit-text-fill-color: rgba(100, 116, 139, 0.6) !important;
+        opacity: 1 !important;
+      }
+      
+      input:focus {
+        border-color: rgba(99, 102, 241, 0.4);
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: 
+          0 0 0 4px rgba(99, 102, 241, 0.1),
+          0 8px 24px rgba(0,0,0,0.08);
+        transform: translateY(-1px);
+      }
+      
+      #lists {
+        display: flex;
+        flex: 1;
+        gap: 24px;
+        overflow: hidden;
+      }
+      
+      .section {
+        display: flex;
+        flex-direction: column;
+        background: rgba(255, 255, 255, 0.6);
+        border-radius: 16px;
+        padding: 16px;
+        border: 1px solid rgba(226, 232, 240, 0.6);
+        backdrop-filter: blur(8px);
+      }
+      
+      .bookmark-section {
+        flex: 0.35;
+        min-width: 280px;
+      }
+      
+      .tab-section {
+        flex: 0.65;
+        min-width: 400px;
+      }
+      
+      .section-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: #475569;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.4);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      
+      ul {
+        list-style: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        overflow-y: auto;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      
+      .host-group {
+        background: rgba(255, 255, 255, 0.8);
+        border-radius: 12px;
+        margin-bottom: 8px;
+        border: 1px solid rgba(226, 232, 240, 0.4);
+        overflow: hidden;
+        transition: all 0.2s ease;
+      }
+      
+      .host-group:hover {
+        background: rgba(255, 255, 255, 0.95);
+        border-color: rgba(99, 102, 241, 0.2);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      }
+      
+      .host-title {
+        padding: 12px 16px;
+        font-weight: 600;
+        font-size: 15px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        color: #374151;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.3);
+        transition: all 0.2s ease;
+        user-select: none;
+      }
+      
+      .host-title:hover {
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%);
+      }
+      
+      .host-icon {
+        margin-right: 10px;
+        font-size: 16px;
+        filter: drop-shadow(0 1px 2px rgba(0,0,0,0.1));
+      }
+      
+      .host-tabs {
+        padding: 0;
+        background: rgba(248, 250, 252, 0.5);
+      }
+      
+      .tab-item {
+        display: flex;
+        align-items: center;
+        padding: 0;
+        margin: 0;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.2);
+        transition: all 0.2s ease;
+      }
+      
+      .tab-item:last-child {
+        border-bottom: none;
+      }
+      
+      .tab-item:hover {
+        background: rgba(255, 255, 255, 0.8);
+      }
+      
+      .tab-delete {
+        all: unset;
+        cursor: pointer;
+        padding: 12px;
+        color: rgba(239, 68, 68, 0.6);
+        font-size: 14px;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        margin: 4px;
+        width: 32px;
+        height: 32px;
+      }
+      
+      .tab-delete:hover {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+        transform: scale(1.1);
+      }
+      
+      .tab-link {
+        display: flex !important;
+        align-items: center !important;
+        padding: 12px 16px 12px 8px !important;
+        color: #374151 !important;
+        text-decoration: none !important;
+        border: none !important;
+        flex: 1;
+        font-size: 14px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+      }
+      
+      .tab-link:hover {
+        color: #6366f1 !important;
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%);
+      }
+      
+      .favicon {
+        width: 18px !important;
+        height: 18px !important;
+        margin-right: 12px !important;
+        border-radius: 4px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+      
+      .bookmark-folder {
+        background: rgba(255, 255, 255, 0.7);
+        border-radius: 10px;
+        margin-bottom: 4px;
+        border: 1px solid rgba(226, 232, 240, 0.3);
+        overflow: hidden;
+        transition: all 0.2s ease;
+      }
+      
+      .bookmark-folder:hover {
+        background: rgba(255, 255, 255, 0.9);
+        border-color: rgba(59, 130, 246, 0.2);
+      }
+      
+      .folder-title {
+        padding: 10px 14px;
+        font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        color: #1e40af;
+        transition: all 0.2s ease;
+        user-select: none;
+      }
+      
+      .folder-title:hover {
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(147, 51, 234, 0.08) 100%);
+      }
+      
+      .folder-icon {
+        margin-right: 8px;
+        font-size: 14px;
+      }
+      
+      .bookmark-link {
+        display: flex !important;
+        align-items: center !important;
+        padding: 8px 14px !important;
+        color: #374151 !important;
+        text-decoration: none !important;
+        border: none !important;
+        font-size: 13px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.2) !important;
+      }
+      
+      .bookmark-link:hover {
+        color: #059669 !important;
+        background: linear-gradient(135deg, rgba(5, 150, 105, 0.05) 0%, rgba(16, 185, 129, 0.05) 100%);
+      }
+      
+      .bookmark-path {
+        font-size: 11px;
+        color: rgba(100, 116, 139, 0.7);
+        margin-bottom: 4px;
+        padding: 0 14px;
+        font-weight: 500;
+      }
+      
+      .no-results {
+        text-align: center;
+        padding: 40px 20px;
+        color: rgba(100, 116, 139, 0.6);
+        font-size: 15px;
+        font-weight: 500;
+      }
+      
+      .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: rgba(100, 116, 139, 0.6);
+      }
+      
+      .empty-icon {
+        font-size: 48px;
+        margin-bottom: 16px;
+        opacity: 0.5;
+      }
+      
+      ::-webkit-scrollbar {
+        width: 6px;
+      }
+      
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      
+      ::-webkit-scrollbar-thumb {
+        background: rgba(148, 163, 184, 0.4);
+        border-radius: 3px;
+      }
+      
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(148, 163, 184, 0.6);
+      }
+      
+      .close-hint {
+        position: absolute;
+        top: 16px;
+        right: 20px;
+        font-size: 12px;
+        color: rgba(100, 116, 139, 0.5);
+        font-weight: 500;
+        background: rgba(248, 250, 252, 0.8);
+        padding: 6px 10px;
+        border-radius: 6px;
+        border: 1px solid rgba(226, 232, 240, 0.4);
+      }
+    `;
+
+    const container = document.createElement('div');
+    container.id = 'container';
+
+    // Create header
+    const header = document.createElement('div');
+    header.className = 'header';
+    
+    const logo = document.createElement('div');
+    logo.className = 'logo';
+    logo.textContent = '🚀 TabGrouper';
+    
+    const subtitle = document.createElement('div');
+    subtitle.className = 'subtitle';
+    subtitle.textContent = 'Search tabs and bookmarks instantly';
+    
+    header.appendChild(logo);
+    header.appendChild(subtitle);
+
+    // Close hint
+    const closeHint = document.createElement('div');
+    closeHint.className = 'close-hint';
+    closeHint.textContent = 'Press ESC to close';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = '🔍 Search tabs, bookmarks, or hosts...';
+
+    const listsContainer = document.createElement('div');
+    listsContainer.id = 'lists';
+
+    // Create sections with titles
+    const bookmarkSection = document.createElement('div');
+    bookmarkSection.className = 'section bookmark-section';
+    const bookmarkTitle = document.createElement('div');
+    bookmarkTitle.className = 'section-title';
+    bookmarkTitle.textContent = '📚 Bookmarks';
+    const bookmarkList = document.createElement('ul');
+    bookmarkSection.appendChild(bookmarkTitle);
+    bookmarkSection.appendChild(bookmarkList);
+
+    const tabSection = document.createElement('div');
+    tabSection.className = 'section tab-section';
+    const tabTitle = document.createElement('div');
+    tabTitle.className = 'section-title';
+    tabTitle.textContent = '🗂️ Tabs';
+    const tabList = document.createElement('ul');
+    tabSection.appendChild(tabTitle);
+    tabSection.appendChild(tabList);
+
+    // Display initial grouped tabs
+    const groupedTabs = await groupTabsByHost(alltabs);
+    displayGroupedTabs(groupedTabs, tabList);
+
+    // Search functionality
+    const debouncedSearch = debounce(async (query) => {
+      if (query) {
+        chrome.runtime.sendMessage({ action: ACTIONS.SEARCH, query: query }, (results) => {
+          const tabs = results.filter(item => item.type === 'tab');
+          const bookmarks = results.filter(item => item.type === 'bookmark');
+          updateSearchResults({ tabs, bookmarks }, bookmarkList, tabList);
+        });
+      } else {
+        const groupedTabs = await groupTabsByHost(alltabs);
+        displayGroupedTabs(groupedTabs, tabList);
+        displayBookmarks(bookmarkTreeNodes, bookmarkList);
+      }
+    }, 300);
+
+    input.addEventListener('input', (e) => {
+      e.stopPropagation();
+      debouncedSearch(e.target.value.toLowerCase());
+    });
+
+    // Display initial bookmarks
+    displayBookmarks(bookmarkTreeNodes, bookmarkList);
+
+    // Assemble UI
+    listsContainer.appendChild(bookmarkSection);
+    listsContainer.appendChild(tabSection);
+    container.appendChild(closeHint);
+    container.appendChild(header);
+    container.appendChild(input);
+    container.appendChild(listsContainer);
+    
+    overlay.appendChild(container);
+    shadow.appendChild(style);
+    shadow.appendChild(overlay);
+    document.body.appendChild(searchBox);
+
+    // Prevent page scrolling and other interactions while search box is open
+    const originalOverflow = document.body.style.overflow;
+    const originalPointerEvents = document.body.style.pointerEvents;
+    
+    document.body.style.overflow = 'hidden';
+    
+    // Store cleanup function
+    searchBox._cleanup = () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.pointerEvents = originalPointerEvents;
+    };
+
+    // Prevent all event bubbling from the search box
+    searchBox.addEventListener('keydown', (event) => {
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    });
+
+    searchBox.addEventListener('keyup', (event) => {
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    });
+
+    searchBox.addEventListener('keypress', (event) => {
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    });
+
+    // Focus input and handle keyboard
+    setTimeout(() => {
+      input.focus();
+      
+      // Prevent input blur to maintain focus
+      input.addEventListener('blur', (e) => {
+        e.stopPropagation();
+        setTimeout(() => {
+          if (document.getElementById(CONFIG.UI.SEARCH_BOX_ID)) {
+            input.focus();
+          }
+        }, 0);
+      });
+    }, 0);
+
+    // Handle specific keyboard events for the input
+    input.addEventListener('keydown', (event) => {
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      
+      if (event.key === 'Escape') {
+        if (searchBox._cleanup) searchBox._cleanup();
+        searchBox.remove();
+        return;
+      }
+      
+      // Prevent other keys from affecting the page
+      if (event.key === 'Enter') {
+        event.preventDefault();
+      }
+    });
+
+    input.addEventListener('keyup', (event) => {
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    });
+
+    input.addEventListener('keypress', (event) => {
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    });
+
+    // Prevent clicks from bubbling to the page
+    container.addEventListener('click', (event) => {
+      event.stopPropagation();
+    });
+
+    // Handle clicking on overlay to close
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) {
+        if (searchBox._cleanup) searchBox._cleanup();
+        searchBox.remove();
+      }
+      event.stopPropagation();
+    });
+
+    async function updateSearchResults(results, bookmarkList, tabList) {
+      const groupedTabs = await groupTabsByHost(results.tabs);
+      displayGroupedTabs(groupedTabs, tabList);
+      bookmarkList.innerHTML = '';
+      displayBookmarks(results.bookmarks, bookmarkList, true);
+    }
+
+    function displayGroupedTabs(groupedTabs, parentElement) {
+      parentElement.innerHTML = '';
+      
+      if (Object.keys(groupedTabs).length === 0) {
+        const emptyState = document.createElement('div');
+        emptyState.className = 'empty-state';
+        emptyState.innerHTML = `
+          <div class="empty-icon">🗂️</div>
+          <div>No matching tabs found</div>
+        `;
+        parentElement.appendChild(emptyState);
+        return;
+      }
+
+      Object.keys(groupedTabs).forEach(host => {
+        const hostGroup = document.createElement('div');
+        hostGroup.className = 'host-group';
+        
+        const hostTitle = document.createElement('div');
+        hostTitle.className = 'host-title';
+        const randomIcon = CONFIG.ICONS[Math.floor(Math.random() * CONFIG.ICONS.length)];
+        
+        const iconSpan = document.createElement('span');
+        iconSpan.className = 'host-icon';
+        iconSpan.textContent = randomIcon;
+        
+        const textSpan = document.createElement('span');
+        textSpan.textContent = host;
+        
+        hostTitle.appendChild(iconSpan);
+        hostTitle.appendChild(textSpan);
+
+        const tabsContainer = document.createElement('div');
+        tabsContainer.className = 'host-tabs';
+        
+        let isExpanded = true;
+        hostTitle.addEventListener('click', () => {
+          isExpanded = !isExpanded;
+          tabsContainer.style.display = isExpanded ? 'block' : 'none';
+        });
+
+        groupedTabs[host].forEach(tab => {
+          const tabItem = document.createElement('div');
+          tabItem.className = 'tab-item';
+
+          const deleteButton = document.createElement('button');
+          deleteButton.className = 'tab-delete';
+          deleteButton.textContent = CONFIG.DEFAULT_ICONS.DELETE;
+          deleteButton.addEventListener('click', (event) => {
+            event.stopPropagation();
+            chrome.runtime.sendMessage({ action: ACTIONS.REMOVE_TAB, tabId: tab.id }, () => {
+              if (searchBox._cleanup) searchBox._cleanup();
+              searchBox.remove();
+              chrome.runtime.sendMessage({ action: ACTIONS.REFRESH_GROUPED_TABS });
+            });
+          });
+
+          const link = document.createElement('a');
+          link.className = 'tab-link';
+          link.href = tab.url;
+          link.textContent = tab.title || 'Untitled Tab';
+
+          const icon = document.createElement('img');
+          icon.className = 'favicon';
+          icon.src = getFaviconUrl(tab.url);
+          icon.onerror = () => {
+            icon.style.display = 'none';
+            const fallback = document.createElement('span');
+            fallback.textContent = CONFIG.DEFAULT_ICONS.SEARCH;
+            fallback.style.marginRight = '8px';
+            link.prepend(fallback);
+          };
+          link.prepend(icon);
+
+          link.addEventListener('click', (event) => {
+            event.preventDefault();
+            chrome.runtime.sendMessage({ action: ACTIONS.ACTIVATE_TAB, tabId: tab.id });
+            if (searchBox._cleanup) searchBox._cleanup();
+            searchBox.remove();
+          });
+
+          tabItem.appendChild(deleteButton);
+          tabItem.appendChild(link);
+          tabsContainer.appendChild(tabItem);
+        });
+
+        hostGroup.appendChild(hostTitle);
+        hostGroup.appendChild(tabsContainer);
+        
+        const hostLi = document.createElement('li');
+        hostLi.appendChild(hostGroup);
+        parentElement.appendChild(hostLi);
+      });
+    }
+
+    function displayBookmarks(nodes, parentElement, isSearchResult = false, level = 0) {
+      parentElement.innerHTML = '';
+
+      if (nodes.length === 0 || (nodes[0].children && nodes[0].children.length === 0)) {
+        const emptyState = document.createElement('div');
+        emptyState.className = 'empty-state';
+        emptyState.innerHTML = `
+          <div class="empty-icon">📚</div>
+          <div>No bookmarks found</div>
+        `;
+        parentElement.appendChild(emptyState);
+        return;
+      }
+
+      nodes.forEach(node => {
+        const listItem = document.createElement('li');
+        listItem.style.marginLeft = `${level * 12}px`;
+
+        if (isSearchResult && node.path) {
+          const pathElement = document.createElement('div');
+          pathElement.className = 'bookmark-path';
+          pathElement.textContent = `${CONFIG.DEFAULT_ICONS.FOLDER} ${node.path.join(' > ')}`;
+          listItem.appendChild(pathElement);
+        }
+
+        if (node.children) {
+          const bookmarkFolder = document.createElement('div');
+          bookmarkFolder.className = 'bookmark-folder';
+
+          const folderTitle = document.createElement('div');
+          folderTitle.className = 'folder-title';
+
+          const folderIcon = document.createElement('span');
+          folderIcon.className = 'folder-icon';
+          folderIcon.textContent = CONFIG.DEFAULT_ICONS.FOLDER;
+
+          const folderText = document.createElement('span');
+          folderText.textContent = node.title || '⭐️ Bookmarks Tools';
+
+          folderTitle.appendChild(folderIcon);
+          folderTitle.appendChild(folderText);
+
+          const subList = document.createElement('ul');
+          subList.style.paddingLeft = '0';
+          
+          let isExpanded = level === 0; // Only expand root level by default
+          subList.style.display = isExpanded ? 'block' : 'none';
+
+          folderTitle.addEventListener('click', () => {
+            isExpanded = !isExpanded;
+            subList.style.display = isExpanded ? 'block' : 'none';
+          });
+
+          displayBookmarks(node.children, subList, false, level + 1);
+
+          bookmarkFolder.appendChild(folderTitle);
+          if (node.children.length > 0) {
+            bookmarkFolder.appendChild(subList);
+          }
+          listItem.appendChild(bookmarkFolder);
+        } else {
+          const link = document.createElement('a');
+          link.className = 'bookmark-link';
+          link.href = node.url;
+          link.textContent = node.title || 'Untitled Bookmark';
+
+          const icon = document.createElement('img');
+          icon.className = 'favicon';
+          icon.src = getFaviconUrl(node.url);
+          icon.onerror = () => {
+            icon.style.display = 'none';
+            const fallback = document.createElement('span');
+            fallback.textContent = CONFIG.DEFAULT_ICONS.BOOKMARK;
+            fallback.style.marginRight = '8px';
+            link.prepend(fallback);
+          };
+          link.prepend(icon);
+
+          link.addEventListener('click', (event) => {
+            event.preventDefault();
+            window.open(link.href, '_blank');
+            if (searchBox._cleanup) searchBox._cleanup();
+            searchBox.remove();
+          });
+
+          listItem.appendChild(link);
+        }
+        parentElement.appendChild(listItem);
+      });
+    }
+  }
+
+  // Main execution
+  const existingBox = document.getElementById(CONFIG.UI.SEARCH_BOX_ID);
+  if (existingBox) {
+    existingBox.remove();
+  } else {
+    createSearchBox(bookmarkTreeNodes, alltabs);
+  }
+}
+
+// Event listeners
+chrome.commands.onCommand.addListener(async (command) => {
+  console.log('Command received:', command);
+  
+  if (command === COMMANDS.OPEN_SEARCH_BOX) {
+    console.log('Processing open-search-box command');
+    
+    try {
+      console.log('Getting tabs and bookmarks...');
+      const [alltabs, activeTab, bookmarkTreeNodes] = await Promise.all([
+        getAllTabs(),
+        getActiveTab(),
+        getBookmarkTree()
+      ]);
+
+      console.log('Active tab:', activeTab ? activeTab.url : 'none');
+      console.log('All tabs count:', alltabs.length);
+      
+      if (activeTab && !activeTab.url.startsWith('chrome://')) {
+        console.log('Injecting script into tab:', activeTab.id);
+        
+        await chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          function: tabGrouper,
+          args: [bookmarkTreeNodes, alltabs]
+        });
+        
+        console.log('Script injection completed');
+      } else {
+        console.warn('Cannot inject script - invalid tab or chrome:// page');
+      }
+    } catch (error) {
+      console.error('Script execution error:', error);
+    }
+  } else {
+    console.log('Unknown command:', command);
+  }
+});
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  const messageHandlers = {
+    [ACTIONS.ACTIVATE_TAB]: handleActivateTab,
+    [ACTIONS.REMOVE_TAB]: handleRemoveTab,
+    [ACTIONS.REFRESH_GROUPED_TABS]: handleRefreshGroupedTabs,
+    [ACTIONS.SEARCH]: handleSearch
+  };
+
+  const handler = messageHandlers[request.action];
+  if (handler) {
+    const result = handler(request, sender, sendResponse);
+    if (result === true) {
+      return true;
+    }
+  }
+});
+
+function handleActivateTab(request) {
+  activateTab(request.tabId);
+}
+
+function handleRemoveTab(request, sender, sendResponse) {
+  removeTab(request.tabId).then(() => {
+    sendResponse({ success: true });
+  });
+  return true;
+}
+
+async function handleRefreshGroupedTabs() {
+  try {
+    const [alltabs, activeTab, bookmarkTreeNodes] = await Promise.all([
+      getAllTabs(),
+      getActiveTab(),
+      getBookmarkTree()
+    ]);
+
+    if (activeTab) {
+      await chrome.scripting.executeScript({
+        target: { tabId: activeTab.id },
+        function: tabGrouper,
+        args: [bookmarkTreeNodes, alltabs]
+      });
+    }
+  } catch (error) {
+    console.error('Refresh error:', error);
+  }
+}
+
+function handleSearch(request, sender, sendResponse) {
+  searchTabsAndBookmarks(request.query)
+    .then(results => sendResponse(results))
+    .catch(error => {
+      console.error('Search error:', error);
+      sendResponse([]);
+    });
+  return true;
+}
+
+chrome.runtime.onInstalled.addListener(async () => {
+  try {
+    const alltabs = await getAllTabs();
+    const groupedTabs = await groupTabsByHost(alltabs);
+
+    for (const [host, tabs] of Object.entries(groupedTabs)) {
+      const tabIds = tabs.map(tab => tab.id);
+      
+      chrome.tabs.group({ tabIds }, (groupId) => {
+        if (chrome.runtime.lastError) {
+          console.warn('Failed to create group:', chrome.runtime.lastError);
+          return;
+        }
+        
+        chrome.tabGroups.update(groupId, { title: host });
+      });
+    }
+  } catch (error) {
+    console.error('Installation setup error:', error);
+  }
+});
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status !== 'complete' || !tab.url) return;
+
+  try {
+    const supportedHosts = await getSupportedHosts();
+    const host = mapUrlToHost(tab.url, supportedHosts);
+
+    const groups = await chrome.tabGroups.query({});
+    const existingGroup = groups.find(group => group.title === host);
+
+    if (existingGroup) {
+      chrome.tabs.group({
+        tabIds: [tabId],
+        groupId: existingGroup.id
+      });
+    } else {
+      chrome.tabs.group({ tabIds: [tabId] }, (groupId) => {
+        if (chrome.runtime.lastError) {
+          console.warn('Failed to create new group:', chrome.runtime.lastError);
+          return;
+        }
+        
+        chrome.tabGroups.update(groupId, { title: host });
+      });
+    }
+  } catch (error) {
+    console.error('Tab update error:', error);
+  }
+});
+
+console.log('TabGrouper background script loaded successfully');
