@@ -382,8 +382,8 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         width: 75vw;
         max-width: 900px;
         min-width: 650px;
-        height: 70vh;
-        max-height: 650px;
+        height: 80vh;
+        max-height: 750px;
         min-height: 500px;
         display: flex;
         flex-direction: column;
