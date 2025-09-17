@@ -20,7 +20,8 @@ const CONFIG = {
   ],
   
   STORAGE_KEYS: {
-    SUPPORTED_HOSTS: 'supportedHosts'
+    SUPPORTED_HOSTS: 'supportedHosts',
+    RECENT_TABS: 'recentTabs'
   },
   
   DEFAULT_ICONS: {
@@ -39,7 +40,8 @@ const ACTIONS = {
   ACTIVATE_TAB: 'activateTab',
   REMOVE_TAB: 'removeTab',
   REFRESH_GROUPED_TABS: 'refreshGroupedTabs',
-  SEARCH: 'search'
+  SEARCH: 'search',
+  OPEN_QUICK_ACCESS_TAB: 'openQuickAccessTab'
 };
 
 // Utility functions
@@ -208,12 +210,70 @@ async function getBookmarkPath(bookmarkId) {
   return path;
 }
 
+// Recent tabs functions - truly global scope
+async function getRecentTabs() {
+  try {
+    const result = await chrome.storage.local.get(CONFIG.STORAGE_KEYS.RECENT_TABS);
+    const allTabs = result[CONFIG.STORAGE_KEYS.RECENT_TABS] || [];
+    
+    // Filter out tabs older than 24 hours
+    const now = Date.now();
+    const twentyFourHoursAgo = now - (24 * 60 * 60 * 1000);
+    const validTabs = allTabs.filter(tab => tab.timestamp > twentyFourHoursAgo);
+    
+    // Update storage if we filtered out expired tabs
+    if (validTabs.length !== allTabs.length) {
+      await chrome.storage.local.set({
+        [CONFIG.STORAGE_KEYS.RECENT_TABS]: validTabs
+      });
+    }
+    
+    return validTabs;
+  } catch (error) {
+    console.error('Error getting recent tabs:', error);
+    return [];
+  }
+}
+
+async function addToRecentTabs(tab) {
+  try {
+    const recentTabs = await getRecentTabs();
+    
+    // Remove existing entry if present (by URL instead of ID)
+    const filteredTabs = recentTabs.filter(item => item.url !== tab.url);
+    
+    // Add to front with timestamp
+    const newEntry = {
+      id: tab.id,
+      title: tab.title,
+      url: tab.url,
+      favicon: tab.favIconUrl,
+      timestamp: Date.now()
+    };
+    
+    filteredTabs.unshift(newEntry);
+    
+    // Keep only last 30 tabs
+    const limitedTabs = filteredTabs.slice(0, 30);
+    
+    await chrome.storage.local.set({
+      [CONFIG.STORAGE_KEYS.RECENT_TABS]: limitedTabs
+    });
+    console.log('Global addToRecentTabs: added', tab.title, 'total count:', limitedTabs.length);
+  } catch (error) {
+    console.error('Error adding to recent tabs:', error);
+  }
+}
+
 // Tab grouper main function - will be injected as content script
 // This function will be stringified and injected, so it must be self-contained
 function tabGrouper(bookmarkTreeNodes, alltabs) {
-  console.log('tabGrouper function started');
-  
-  // All configuration and utilities must be defined within this function
+  try {
+    console.log('🚀 tabGrouper function started');
+    console.log('🚀 bookmarkTreeNodes:', bookmarkTreeNodes?.length || 0);
+    console.log('🚀 alltabs:', alltabs?.length || 0);
+    
+    // All configuration and utilities must be defined within this function
   const CONFIG = {
     UI: {
       SEARCH_BOX_ID: 'tab-grouper',
@@ -228,7 +288,10 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       "🔥", "🌈", "⚡", "🌍", "🌙", "☀️", "🌊", "🍎", "🍔", "🎁",
       "🎉", "🎈", "🎯", "🏆", "🏠", "🚗", "✈️", "🛒", "💡"
     ],
-    STORAGE_KEYS: { SUPPORTED_HOSTS: 'supportedHosts' },
+    STORAGE_KEYS: { 
+      SUPPORTED_HOSTS: 'supportedHosts',
+      RECENT_TABS: 'recentTabs'
+    },
     DEFAULT_ICONS: { FOLDER: '📂', BOOKMARK: '⭐️', SEARCH: '🔍', DELETE: '✖' }
   };
   
@@ -236,7 +299,8 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     ACTIVATE_TAB: 'activateTab',
     REMOVE_TAB: 'removeTab',
     REFRESH_GROUPED_TABS: 'refreshGroupedTabs',
-    SEARCH: 'search'
+    SEARCH: 'search',
+    OPEN_QUICK_ACCESS_TAB: 'openQuickAccessTab'
   };
 
   // Utility functions - must be defined inline
@@ -302,14 +366,9 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
   function getFaviconUrl(url) {
     try {
       const urlObj = new URL(url);
-      return `${urlObj.origin}/favicon.ico`;
-    } catch (e) {
-      try {
-        const urlObj = new URL(url);
-        return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}`;
-      } catch (error) {
-        return 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="%23ccc"/></svg>';
-      }
+      return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=16`;
+    } catch (error) {
+      return 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="%23ccc"/></svg>';
     }
   }
 
@@ -323,6 +382,61 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       clearTimeout(timeout);
       timeout = setTimeout(later, wait);
     };
+  }
+
+  // Recent tabs functions - internal to tabGrouper
+  async function getRecentTabs() {
+    try {
+      const result = await chrome.storage.local.get(CONFIG.STORAGE_KEYS.RECENT_TABS);
+      const allTabs = result[CONFIG.STORAGE_KEYS.RECENT_TABS] || [];
+      
+      // Filter out tabs older than 24 hours
+      const now = Date.now();
+      const twentyFourHoursAgo = now - (24 * 60 * 60 * 1000);
+      const validTabs = allTabs.filter(tab => tab.timestamp > twentyFourHoursAgo);
+      
+      // Update storage if we filtered out expired tabs
+      if (validTabs.length !== allTabs.length) {
+        await chrome.storage.local.set({
+          [CONFIG.STORAGE_KEYS.RECENT_TABS]: validTabs
+        });
+      }
+      
+      return validTabs;
+    } catch (error) {
+      console.error('Error getting recent tabs:', error);
+      return [];
+    }
+  }
+
+  async function addToRecentTabs(tab) {
+    try {
+      const recentTabs = await getRecentTabs();
+      
+      // Remove existing entry if present (by URL instead of ID)
+      const filteredTabs = recentTabs.filter(item => item.url !== tab.url);
+      
+      // Add to front with timestamp
+      const newEntry = {
+        id: tab.id,
+        title: tab.title,
+        url: tab.url,
+        favicon: tab.favIconUrl,
+        timestamp: Date.now()
+      };
+      
+      filteredTabs.unshift(newEntry);
+      
+      // Keep only last 30 tabs
+      const limitedTabs = filteredTabs.slice(0, 30);
+      
+      await chrome.storage.local.set({
+        [CONFIG.STORAGE_KEYS.RECENT_TABS]: limitedTabs
+      });
+      console.log('Internal addToRecentTabs: added', tab.title, 'total count:', limitedTabs.length);
+    } catch (error) {
+      console.error('Error adding to recent tabs:', error);
+    }
   }
 
   // Create search box function
@@ -359,6 +473,15 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         animation: fadeIn 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
         will-change: opacity;
         transform: translateZ(0);
+        padding: 20px;
+      }
+      
+      .interface-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        max-width: 95vw;
+        height: 80vh;
       }
       
       @keyframes fadeIn {
@@ -379,10 +502,8 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
           0 20px 60px rgba(0,0,0,0.15),
           0 8px 32px rgba(0,0,0,0.08),
           inset 0 1px 0 rgba(255,255,255,0.9);
-        width: 75vw;
-        max-width: 900px;
-        min-width: 650px;
-        height: 80vh;
+        width: 750px;
+        height: 100%;
         max-height: 750px;
         min-height: 500px;
         display: flex;
@@ -390,6 +511,55 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         animation: slideIn 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
         will-change: transform, opacity;
         transform: translateZ(0);
+      }
+      
+      .sidebar {
+        position: relative;
+        width: 320px;
+        height: 100%;
+        max-height: 750px;
+        min-height: 500px;
+        background: linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(248,250,252,0.95) 100%);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 20px;
+        padding: 20px;
+        box-shadow: 
+          0 20px 60px rgba(0,0,0,0.12),
+          0 8px 32px rgba(0,0,0,0.06),
+          inset 0 1px 0 rgba(255,255,255,0.9);
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        overflow: hidden;
+        z-index: 100000;
+        animation: slideInRight 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        will-change: transform, opacity;
+      }
+      
+      @keyframes slideInRight {
+        from {
+          opacity: 0;
+          transform: translateX(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+      
+      .sidebar-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: #374151;
+        margin-bottom: 8px;
+        padding: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(248, 250, 252, 0.8);
+        border-radius: 8px;
       }
       
       @keyframes slideIn {
@@ -730,6 +900,93 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         border-radius: 6px;
         border: 1px solid rgba(226, 232, 240, 0.4);
       }
+      
+      /* Sidebar Recent Tabs Styles */
+      .sidebar-recent-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 0;
+        margin: 0;
+        list-style: none;
+        max-height: 100%;
+        display: block;
+      }
+      
+      .sidebar-recent-item {
+        margin: 0 0 4px 0;
+        padding: 0;
+        border-radius: 8px;
+        overflow: hidden;
+        display: block;
+        width: 100%;
+      }
+      
+      .sidebar-recent-link {
+        display: flex !important;
+        align-items: center !important;
+        padding: 8px 12px !important;
+        text-decoration: none !important;
+        border: none !important;
+        color: #374151 !important;
+        transition: all 0.2s ease;
+        border-radius: 8px;
+        font-size: 13px;
+        background: rgba(255, 255, 255, 0.5);
+        width: 100%;
+        box-sizing: border-box;
+        min-height: 32px;
+      }
+      
+      .sidebar-recent-link:hover {
+        background: rgba(255, 255, 255, 0.9);
+        color: #059669 !important;
+        transform: translateX(2px);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        cursor: pointer;
+      }
+      
+      .sidebar-recent-link:active {
+        transform: translateX(1px);
+        background: rgba(5, 150, 105, 0.1);
+      }
+      
+      .sidebar-favicon {
+        flex-shrink: 0;
+      }
+      
+      .sidebar-title-text {
+        flex: 1;
+        font-weight: 500;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        line-height: 1.2;
+      }
+      
+      .sidebar-time {
+        font-size: 11px;
+        color: rgba(100, 116, 139, 0.7);
+        font-weight: 400;
+        margin-left: 4px;
+        flex-shrink: 0;
+      }
+      
+      .sidebar-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 200px;
+        color: rgba(100, 116, 139, 0.5);
+        font-size: 12px;
+        text-align: center;
+      }
+      
+      .sidebar-empty-icon {
+        font-size: 24px;
+        margin-bottom: 8px;
+        opacity: 0.6;
+      }
     `;
 
     const container = document.createElement('div');
@@ -762,7 +1019,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     const listsContainer = document.createElement('div');
     listsContainer.id = 'lists';
 
-    // Create sections with titles
+    // Create main sections
     const bookmarkSection = document.createElement('div');
     bookmarkSection.className = 'section bookmark-section';
     const bookmarkTitle = document.createElement('div');
@@ -805,18 +1062,40 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       debouncedSearch(e.target.value.toLowerCase());
     });
 
-    // Display initial bookmarks
-    displayBookmarks(bookmarkTreeNodes, bookmarkList);
+    // Create sidebar
+    const sidebar = document.createElement('div');
+    sidebar.className = 'sidebar';
 
-    // Assemble UI
+    const sidebarTitle = document.createElement('div');
+    sidebarTitle.className = 'sidebar-title';
+    sidebarTitle.innerHTML = '⚡ Quick Access';
+
+    const recentTabsList = document.createElement('ul');
+    recentTabsList.className = 'sidebar-recent-list';
+
+    // Display initial data
+    displayBookmarks(bookmarkTreeNodes, bookmarkList);
+    displaySidebarRecentTabs(recentTabsList);
+
+    // Assemble main interface
     listsContainer.appendChild(bookmarkSection);
     listsContainer.appendChild(tabSection);
     container.appendChild(closeHint);
     container.appendChild(header);
     container.appendChild(input);
     container.appendChild(listsContainer);
+
+    // Assemble sidebar
+    sidebar.appendChild(sidebarTitle);
+    sidebar.appendChild(recentTabsList);
+
+    // Create wrapper for both interfaces
+    const wrapper = document.createElement('div');
+    wrapper.className = 'interface-wrapper';
+    wrapper.appendChild(container);
+    wrapper.appendChild(sidebar);
     
-    overlay.appendChild(container);
+    overlay.appendChild(wrapper);
     shadow.appendChild(style);
     shadow.appendChild(overlay);
     document.body.appendChild(searchBox);
@@ -870,8 +1149,18 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       event.stopImmediatePropagation();
       
       if (event.key === 'Escape') {
+        // Properly blur the input before removal
+        event.target.blur();
+        
         if (searchBox._cleanup) searchBox._cleanup();
         searchBox.remove();
+        
+        // Restore focus to document body to prevent cursor blinking
+        document.body.focus();
+        
+        // Re-enable page scrolling
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
         return;
       }
       
@@ -899,8 +1188,21 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     // Handle clicking on overlay to close
     overlay.addEventListener('click', (event) => {
       if (event.target === overlay) {
+        // Properly blur any focused elements before removal
+        const activeElement = document.activeElement;
+        if (activeElement && searchBox.contains(activeElement)) {
+          activeElement.blur();
+        }
+        
         if (searchBox._cleanup) searchBox._cleanup();
         searchBox.remove();
+        
+        // Restore focus to document body to prevent cursor blinking
+        document.body.focus();
+        
+        // Re-enable page scrolling
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
       }
       event.stopPropagation();
     });
@@ -986,8 +1288,12 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
           };
           link.prepend(icon);
 
-          link.addEventListener('click', (event) => {
+          link.addEventListener('click', async (event) => {
             event.preventDefault();
+            
+            // Add to recent tabs before activating
+            await addToRecentTabs(tab);
+            
             chrome.runtime.sendMessage({ action: ACTIONS.ACTIVATE_TAB, tabId: tab.id });
             if (searchBox._cleanup) searchBox._cleanup();
             searchBox.remove();
@@ -1004,6 +1310,112 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         const hostLi = document.createElement('li');
         hostLi.appendChild(hostGroup);
         parentElement.appendChild(hostLi);
+      });
+    }
+
+    async function displaySidebarRecentTabs(parentElement) {
+      parentElement.innerHTML = '';
+      
+      const recentTabs = await getRecentTabs();
+      
+      if (recentTabs.length === 0) {
+        const emptyState = document.createElement('div');
+        emptyState.className = 'sidebar-empty';
+        emptyState.innerHTML = `
+          <div class="sidebar-empty-icon">⚡</div>
+          <div>No recent pages yet<br>Browse some sites to see them here</div>
+        `;
+        parentElement.appendChild(emptyState);
+        return;
+      }
+
+      recentTabs.slice(0, 20).forEach((tab, index) => {
+        
+        const listItem = document.createElement('li');
+        listItem.className = 'sidebar-recent-item';
+        
+        const link = document.createElement('a');
+        link.href = tab.url;
+        link.className = 'sidebar-recent-link';
+        link.title = tab.url; // Show full URL on hover
+        
+        // Create favicon with fallback handling
+        const faviconContainer = document.createElement('span');
+        faviconContainer.className = 'sidebar-favicon';
+        faviconContainer.style.display = 'inline-flex';
+        faviconContainer.style.alignItems = 'center';
+        faviconContainer.style.justifyContent = 'center';
+        faviconContainer.style.width = '14px';
+        faviconContainer.style.height = '14px';
+        faviconContainer.style.marginRight = '8px';
+        
+        // Try to use favicon, but fallback to emoji
+        const favicon = document.createElement('img');
+        favicon.src = tab.favicon || getFaviconUrl(tab.url);
+        favicon.alt = '';
+        favicon.style.width = '14px';
+        favicon.style.height = '14px';
+        favicon.style.borderRadius = '3px';
+        
+        // Fallback to emoji if image fails
+        favicon.onerror = () => {
+          faviconContainer.innerHTML = '🌐';
+          faviconContainer.style.fontSize = '12px';
+        };
+        
+        faviconContainer.appendChild(favicon);
+        
+        const titleText = document.createElement('span');
+        titleText.className = 'sidebar-title-text';
+        titleText.textContent = tab.title || tab.url;
+        
+        const timeText = document.createElement('span');
+        timeText.className = 'sidebar-time';
+        const timeAgo = Math.floor((Date.now() - tab.timestamp) / 1000 / 60);
+        timeText.textContent = timeAgo < 1 ? 'now' : timeAgo < 60 ? `${timeAgo}m` : `${Math.floor(timeAgo/60)}h`;
+        
+        link.appendChild(faviconContainer);
+        link.appendChild(titleText);
+        link.appendChild(timeText);
+        
+        link.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          const clickId = Date.now() + Math.random();
+          console.log('🔗 Clicking on Quick Access item:', tab.url, 'ID:', clickId);
+          
+          // Send message to background script to handle tab operations
+          try {
+            chrome.runtime.sendMessage({
+              action: 'openQuickAccessTab',
+              url: tab.url,
+              clickId: clickId
+            });
+            
+            // Properly close the interface with focus cleanup
+            const activeElement = document.activeElement;
+            if (activeElement && searchBox.contains(activeElement)) {
+              activeElement.blur();
+            }
+            
+            if (searchBox._cleanup) searchBox._cleanup();
+            searchBox.remove();
+            
+            // Restore focus to document body
+            document.body.focus();
+            
+            // Re-enable page scrolling
+            document.body.style.overflow = '';
+            document.documentElement.style.overflow = '';
+            
+          } catch (error) {
+            console.error('Error sending message to background script:', error);
+          }
+        });
+        
+        listItem.appendChild(link);
+        parentElement.appendChild(listItem);
       });
     }
 
@@ -1102,9 +1514,28 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
   // Main execution
   const existingBox = document.getElementById(CONFIG.UI.SEARCH_BOX_ID);
   if (existingBox) {
+    // Properly blur any focused elements before removal
+    const activeElement = document.activeElement;
+    if (activeElement && existingBox.contains(activeElement)) {
+      activeElement.blur();
+    }
+    
+    // Remove the interface
     existingBox.remove();
+    
+    // Restore focus to document body to prevent cursor blinking
+    document.body.focus();
+    
+    // Re-enable page scrolling
+    document.body.style.overflow = '';
+    document.documentElement.style.overflow = '';
   } else {
     createSearchBox(bookmarkTreeNodes, alltabs);
+  }
+  
+  } catch (error) {
+    console.error('🚨 Error in tabGrouper function:', error);
+    console.error('🚨 Stack trace:', error.stack);
   }
 }
 
@@ -1148,24 +1579,81 @@ chrome.commands.onCommand.addListener(async (command) => {
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('📨 Background received message:', request.action);
+  
   const messageHandlers = {
     [ACTIONS.ACTIVATE_TAB]: handleActivateTab,
     [ACTIONS.REMOVE_TAB]: handleRemoveTab,
     [ACTIONS.REFRESH_GROUPED_TABS]: handleRefreshGroupedTabs,
-    [ACTIONS.SEARCH]: handleSearch
+    [ACTIONS.SEARCH]: handleSearch,
+    [ACTIONS.OPEN_QUICK_ACCESS_TAB]: handleOpenQuickAccessTab
   };
 
   const handler = messageHandlers[request.action];
   if (handler) {
+    console.log('✅ Found handler for:', request.action);
     const result = handler(request, sender, sendResponse);
     if (result === true) {
       return true;
     }
+  } else {
+    console.log('❌ No handler found for:', request.action);
+    console.log('Available handlers:', Object.keys(messageHandlers));
   }
 });
 
-function handleActivateTab(request) {
-  activateTab(request.tabId);
+async function handleActivateTab(request) {
+  await activateTab(request.tabId);
+  
+  // Also track this tab activation
+  try {
+    const tab = await chrome.tabs.get(request.tabId);
+    await trackRecentTab(tab);
+  } catch (error) {
+    console.error('Error tracking activated tab:', error);
+  }
+}
+
+async function handleOpenQuickAccessTab(request, sender, sendResponse) {
+  console.log('📨 Background handling Quick Access tab open:', request.url);
+  console.log('🆔 Click ID:', request.clickId);
+  console.log('🕐 Timestamp:', Date.now());
+  
+  try {
+    // Try to activate existing tab first - use broader search
+    const allTabs = await chrome.tabs.query({});
+    const matchingTabs = allTabs.filter(tab => {
+      // Normalize URLs for comparison
+      const normalizeUrl = (url) => {
+        if (!url) return '';
+        return url.replace(/\/$/, '').toLowerCase(); // Remove trailing slash and lowercase
+      };
+      return normalizeUrl(tab.url) === normalizeUrl(request.url);
+    });
+    
+    console.log('🔍 Found existing tabs with exact URL match:', matchingTabs.length);
+    
+    if (matchingTabs.length > 0) {
+      console.log('✅ Activating existing tab:', matchingTabs[0].id);
+      await chrome.tabs.update(matchingTabs[0].id, { active: true });
+      await chrome.windows.update(matchingTabs[0].windowId, { focused: true });
+    } else {
+      console.log('🆕 Creating new tab for:', request.url);
+      const newTab = await chrome.tabs.create({ url: request.url });
+      console.log('✅ New tab created:', newTab.id);
+    }
+    
+    if (sendResponse) {
+      sendResponse({ success: true });
+    }
+  } catch (error) {
+    console.error('❌ Error handling Quick Access tab open:', error);
+    if (sendResponse) {
+      sendResponse({ success: false, error: error.message });
+    }
+  }
+  
+  return true; // Keep message channel open for async response
 }
 
 function handleRemoveTab(request, sender, sendResponse) {
@@ -1230,6 +1718,13 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete' || !tab.url) return;
 
+  // Track recent tab first
+  try {
+    await trackRecentTab(tab);
+  } catch (error) {
+    console.error('Error tracking recent tab:', error);
+  }
+
   try {
     const supportedHosts = await getSupportedHosts();
     const host = mapUrlToHost(tab.url, supportedHosts);
@@ -1257,4 +1752,66 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   }
 });
 
+// Helper function to track recent tabs - must be defined before listeners
+async function trackRecentTab(tab) {
+  try {
+    if (!tab) {
+      console.log('Skipping: no tab object');
+      return;
+    }
+    
+    if (!tab.url) {
+      console.log('Skipping: no URL for tab', tab.id);
+      return;
+    }
+    
+    if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+      console.log('Skipping chrome:// or extension URL:', tab.url);
+      return;
+    }
+    
+    if (tab.url === 'about:blank' || tab.url === '') {
+      console.log('Skipping blank page');
+      return;
+    }
+
+    console.log('✓ Tracking tab:', tab.title || 'No title', tab.url);
+    
+    // Use the global addToRecentTabs function
+    await addToRecentTabs(tab);
+    
+  } catch (error) {
+    console.error('Error tracking recent tab:', error, tab);
+  }
+}
+
+// Additional tab activation tracking
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  console.log('✓ Tab activated:', activeInfo.tabId);
+  try {
+    const tab = await chrome.tabs.get(activeInfo.tabId);
+    await trackRecentTab(tab);
+  } catch (error) {
+    console.error('Error tracking tab activation:', error);
+  }
+});
+
+// Function to manually track current active tab (for testing)
+async function trackCurrentTab() {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tabs.length > 0) {
+      console.log('Manually tracking current tab:', tabs[0].title, tabs[0].url);
+      await trackRecentTab(tabs[0]);
+    }
+  } catch (error) {
+    console.error('Error manually tracking tab:', error);
+  }
+}
+
+// Make function available globally for testing
+globalThis.trackCurrentTab = trackCurrentTab;
+
+
 console.log('TabGrouper background script loaded successfully');
+console.log('You can run trackCurrentTab() in console to manually track current tab');
