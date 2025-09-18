@@ -66,10 +66,16 @@ const ACTIONS = {
 const AUTO_COLLAPSE_ALARM_NAME = 'autoCollapseCheck';
 
 // Initialize auto-collapse on startup
-chrome.runtime.onStartup.addListener(initializeAutoCollapse);
+chrome.runtime.onStartup.addListener(() => {
+  console.log('🔄 Service Worker started, initializing auto-collapse...');
+  initializeAutoCollapse();
+});
 
 // Also initialize when the extension is installed/enabled
-chrome.runtime.onInstalled.addListener(initializeAutoCollapse);
+chrome.runtime.onInstalled.addListener(() => {
+  console.log('🔄 Extension installed/enabled, initializing auto-collapse...');
+  initializeAutoCollapse();
+});
 
 // Handle alarm events
 chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -240,8 +246,11 @@ async function checkInactiveTabGroups() {
     const groupCount = Object.keys(groupedTabs).length;
     
     if (groupCount === 0) {
+      console.log('📊 No tab groups found for auto-collapse check');
       return;
     }
+    
+    console.log(`📊 Checking ${groupCount} tab groups for auto-collapse (${tabCount} tabs total)`);
     
     let collapsedCount = 0;
     
@@ -263,7 +272,12 @@ async function checkInactiveTabGroups() {
         // 如果没有时间记录，在当次检查时设置当前时间，下次检查就能收起了
         if (!lastActivity) {
           lastActivity = now;
-          await updateTabActivity(tab.id, now); // 记录当前时间
+          try {
+            await updateTabActivity(tab.id, now); // 记录当前时间
+          } catch (error) {
+            console.warn(`⚠️ Failed to update activity for tab ${tab.id}, using current time as fallback`);
+            // Continue with current time as fallback
+          }
         }
         
         const timeSinceActivity = now - lastActivity;
@@ -271,6 +285,7 @@ async function checkInactiveTabGroups() {
         // 如果任何一个标签页在超时时间内活跃过，就不收起整个组
         if (timeSinceActivity <= timeoutMs) {
           allTabsInactive = false;
+          console.log(`⏰ Tab ${tab.id} in group ${groupId} is still active (${Math.round(timeSinceActivity / 60000)} min ago)`);
           break;
         }
         
@@ -357,15 +372,27 @@ async function ensureAutoCollapseActive() {
   try {
     const settings = await getAutoCollapseSettings();
     if (!settings.enabled) {
+      console.log('⚙️ Auto-collapse is disabled, skipping activation check');
       return;
     }
 
     const alarm = await chrome.alarms.get(AUTO_COLLAPSE_ALARM_NAME);
     if (!alarm) {
+      console.log('⚠️ Auto-collapse alarm not found, restarting...');
       await startAutoCollapseChecker();
+      console.log('✅ Auto-collapse alarm restarted successfully');
+    } else {
+      console.log(`⏰ Auto-collapse alarm is active (next: ${new Date(alarm.scheduledTime).toLocaleTimeString()})`);
     }
   } catch (error) {
-    console.error('Error ensuring auto-collapse is active:', error);
+    console.error('❌ Error ensuring auto-collapse is active:', error);
+    // Try to restart the checker as a fallback
+    try {
+      await startAutoCollapseChecker();
+      console.log('✅ Auto-collapse restarted as fallback');
+    } catch (fallbackError) {
+      console.error('❌ Failed to restart auto-collapse:', fallbackError);
+    }
   }
 }
 
@@ -2366,7 +2393,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     [ACTIONS.SEARCH]: handleSearch,
     [ACTIONS.OPEN_QUICK_ACCESS_TAB]: handleOpenQuickAccessTab,
     [ACTIONS.GET_AUTO_COLLAPSE_SETTINGS]: handleGetAutoCollapseSettings,
-    [ACTIONS.UPDATE_AUTO_COLLAPSE_SETTINGS]: handleUpdateAutoCollapseSettings
+    [ACTIONS.UPDATE_AUTO_COLLAPSE_SETTINGS]: handleUpdateAutoCollapseSettings,
+    'ping': handlePing
   };
 
   const handler = messageHandlers[request.action];
@@ -2592,8 +2620,20 @@ function handleUpdateAutoCollapseSettings(request, sender, sendResponse) {
   return true; // Keep message channel open
 }
 
-chrome.runtime.onInstalled.addListener(async () => {
+function handlePing(request, sender, sendResponse) {
+  console.log('🏓 Service Worker ping received, responding with pong');
+  
+  // Ensure auto-collapse is active when we get pinged
+  ensureAutoCollapseActive();
+  
+  sendResponse({ success: true, message: 'pong' });
+  return false; // Close message channel immediately
+}
+
+chrome.runtime.onInstalled.addListener(async (details) => {
   try {
+    console.log('🔧 Extension installed/updated, reason:', details.reason);
+    
     const alltabs = await getAllTabs();
     const groupedTabs = await groupTabsByHost(alltabs);
 
@@ -2610,10 +2650,12 @@ chrome.runtime.onInstalled.addListener(async () => {
       });
     }
 
-    // Initialize auto-collapse functionality
-    await initializeAutoCollapse();
+    // Initialize auto-collapse functionality and start Service Worker
+    await autoStartServiceWorker();
+    
+    console.log('✅ Extension installation/update completed');
   } catch (error) {
-    console.error('Installation setup error:', error);
+    console.error('❌ Installation setup error:', error);
   }
 });
 
@@ -2753,12 +2795,56 @@ globalThis.trackCurrentTab = trackCurrentTab;
 
 console.log('TabGrouper background script loaded successfully');
 
+// Service Worker keep-alive mechanism
+// This helps ensure the service worker stays active and auto-collapse works
+let keepAliveInterval;
+
+function startKeepAlive() {
+  // Clear any existing interval
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+  }
+  
+  // Send a keep-alive message every 20 seconds to prevent SW from going idle
+  keepAliveInterval = setInterval(() => {
+    // Just a simple operation to keep the SW alive
+    chrome.storage.local.get('keepAlive', () => {
+      // This operation keeps the service worker active
+      console.log('🔄 Service Worker keep-alive ping');
+    });
+  }, 20000); // 20 seconds
+}
+
+// Auto-start Service Worker when extension is enabled/installed
+async function autoStartServiceWorker() {
+  try {
+    console.log('🚀 Auto-starting Service Worker...');
+    
+    // Trigger a simple chrome API call to wake up the service worker
+    await chrome.storage.local.get('autoStart');
+    
+    // Start keep-alive mechanism
+    startKeepAlive();
+    
+    // Initialize auto-collapse
+    await initializeAutoCollapse();
+    await ensureAutoCollapseActive();
+    
+    console.log('✅ Service Worker auto-start completed');
+  } catch (error) {
+    console.error('❌ Error auto-starting Service Worker:', error);
+  }
+}
+
 
 // Initialize auto-collapse on script load (for service worker reactivation)
 setTimeout(async () => {
   try {
-    await initializeAutoCollapse();
+    console.log('🔄 Service Worker script loaded, initializing auto-collapse...');
+    await autoStartServiceWorker();
+    
+    console.log('✅ Auto-collapse initialization completed on script load');
   } catch (error) {
-    console.error('Error initializing auto-collapse on script load:', error);
+    console.error('❌ Error initializing auto-collapse on script load:', error);
   }
 }, 1000);

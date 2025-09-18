@@ -15,11 +15,31 @@ export class PopupManager {
    * Initialize popup functionality
    */
   async init() {
+    // Ensure Service Worker is active when popup opens
+    await this.ensureServiceWorkerActive();
+    
     await this.loadSupportedHosts();
     this.setupEventListeners();
     this.displayHosts();
     await this.loadShortcuts();
     await this.loadAutoCollapseSettings();
+  }
+
+  /**
+   * Ensure Service Worker is active
+   */
+  async ensureServiceWorkerActive() {
+    try {
+      console.log('🔄 Popup opened, ensuring Service Worker is active...');
+      
+      // Send a simple message to wake up the service worker
+      await chrome.runtime.sendMessage({ action: 'ping' });
+      
+      console.log('✅ Service Worker activated from popup');
+    } catch (error) {
+      console.log('⚠️ Service Worker may not be active:', error);
+      // This is expected if SW is not active, it will be activated by this call
+    }
   }
 
   /**
