@@ -17,7 +17,16 @@ export const CONFIG = {
   ],
   
   STORAGE_KEYS: {
-    SUPPORTED_HOSTS: 'supportedHosts'
+    SUPPORTED_HOSTS: 'supportedHosts',
+    AUTO_COLLAPSE_SETTINGS: 'autoCollapseSettings',
+    TAB_ACTIVITY: 'tabActivity'
+  },
+  
+  AUTO_COLLAPSE: {
+    DEFAULT_ENABLED: false,
+    DEFAULT_TIMEOUT_MINUTES: 5,
+    MIN_TIMEOUT_MINUTES: 1,
+    MAX_TIMEOUT_MINUTES: 60
   },
   
   DEFAULT_ICONS: {
@@ -45,5 +54,7 @@ export const ACTIONS = {
   ACTIVATE_TAB: 'activateTab',
   REMOVE_TAB: 'removeTab',
   REFRESH_GROUPED_TABS: 'refreshGroupedTabs',
-  SEARCH: 'search'
+  SEARCH: 'search',
+  GET_AUTO_COLLAPSE_SETTINGS: 'getAutoCollapseSettings',
+  UPDATE_AUTO_COLLAPSE_SETTINGS: 'updateAutoCollapseSettings'
 };

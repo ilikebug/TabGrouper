@@ -1,5 +1,5 @@
 // Popup management module
-import { CONFIG } from '../constants/config.js';
+import { CONFIG, ACTIONS } from '../constants/config.js';
 import { getSupportedHosts, saveSupportedHosts } from '../utils/hostUtils.js';
 
 /**
@@ -19,6 +19,7 @@ export class PopupManager {
     this.setupEventListeners();
     this.displayHosts();
     await this.loadShortcuts();
+    await this.loadAutoCollapseSettings();
   }
 
   /**
@@ -55,6 +56,19 @@ export class PopupManager {
     const manageShortcutsButton = document.getElementById('manage-shortcuts');
     if (manageShortcutsButton) {
       manageShortcutsButton.addEventListener('click', () => this.openShortcutsManager());
+    }
+
+    // Setup auto-collapse functionality
+    const autoCollapseEnabled = document.getElementById('auto-collapse-enabled');
+    const autoCollapseTimeout = document.getElementById('auto-collapse-timeout');
+    
+    if (autoCollapseEnabled) {
+      autoCollapseEnabled.addEventListener('change', () => this.handleAutoCollapseToggle());
+    }
+    
+    if (autoCollapseTimeout) {
+      autoCollapseTimeout.addEventListener('change', () => this.handleAutoCollapseTimeoutChange());
+      autoCollapseTimeout.addEventListener('input', () => this.validateTimeoutInput());
     }
   }
 
@@ -302,5 +316,145 @@ export class PopupManager {
     chrome.tabs.create({
       url: 'chrome://extensions/shortcuts'
     });
+  }
+
+  /**
+   * Load auto-collapse settings and update UI
+   */
+  async loadAutoCollapseSettings() {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: ACTIONS.GET_AUTO_COLLAPSE_SETTINGS
+      });
+      
+      const autoCollapseEnabled = document.getElementById('auto-collapse-enabled');
+      const autoCollapseTimeout = document.getElementById('auto-collapse-timeout');
+      const autoCollapseSettings = document.getElementById('auto-collapse-settings');
+      
+      if (autoCollapseEnabled && response) {
+        autoCollapseEnabled.checked = response.enabled;
+        this.updateAutoCollapseUI(response.enabled);
+      }
+      
+      if (autoCollapseTimeout && response) {
+        autoCollapseTimeout.value = response.timeoutMinutes;
+      }
+    } catch (error) {
+      console.error('Error loading auto-collapse settings:', error);
+    }
+  }
+
+  /**
+   * Handle auto-collapse toggle
+   */
+  async handleAutoCollapseToggle() {
+    const autoCollapseEnabled = document.getElementById('auto-collapse-enabled');
+    const autoCollapseTimeout = document.getElementById('auto-collapse-timeout');
+    
+    if (!autoCollapseEnabled || !autoCollapseTimeout) return;
+    
+    const enabled = autoCollapseEnabled.checked;
+    const timeoutMinutes = parseInt(autoCollapseTimeout.value) || 5;
+    
+    this.updateAutoCollapseUI(enabled);
+    await this.saveAutoCollapseSettings(enabled, timeoutMinutes);
+  }
+
+  /**
+   * Handle auto-collapse timeout change
+   */
+  async handleAutoCollapseTimeoutChange() {
+    const autoCollapseEnabled = document.getElementById('auto-collapse-enabled');
+    const autoCollapseTimeout = document.getElementById('auto-collapse-timeout');
+    
+    if (!autoCollapseEnabled || !autoCollapseTimeout) return;
+    
+    const enabled = autoCollapseEnabled.checked;
+    const timeoutMinutes = parseInt(autoCollapseTimeout.value) || 5;
+    
+    await this.saveAutoCollapseSettings(enabled, timeoutMinutes);
+  }
+
+  /**
+   * Validate timeout input
+   */
+  validateTimeoutInput() {
+    const autoCollapseTimeout = document.getElementById('auto-collapse-timeout');
+    if (!autoCollapseTimeout) return;
+    
+    let value = parseInt(autoCollapseTimeout.value);
+    if (isNaN(value) || value < 1) {
+      value = 1;
+    } else if (value > 60) {
+      value = 60;
+    }
+    
+    autoCollapseTimeout.value = value;
+  }
+
+  /**
+   * Update auto-collapse UI based on enabled state
+   */
+  updateAutoCollapseUI(enabled) {
+    const autoCollapseSettings = document.getElementById('auto-collapse-settings');
+    if (autoCollapseSettings) {
+      if (enabled) {
+        autoCollapseSettings.classList.remove('disabled');
+      } else {
+        autoCollapseSettings.classList.add('disabled');
+      }
+    }
+  }
+
+  /**
+   * Save auto-collapse settings
+   */
+  async saveAutoCollapseSettings(enabled, timeoutMinutes) {
+    try {
+      console.log('📨 Popup: Saving auto-collapse settings...', { enabled, timeoutMinutes });
+      
+      // Add timeout to prevent hanging
+      const messagePromise = chrome.runtime.sendMessage({
+        action: ACTIONS.UPDATE_AUTO_COLLAPSE_SETTINGS,
+        settings: {
+          enabled: enabled,
+          timeoutMinutes: timeoutMinutes
+        }
+      });
+      
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Message timeout')), 5000);
+      });
+      
+      const response = await Promise.race([messagePromise, timeoutPromise]);
+      
+      console.log('📨 Popup: Received response:', response);
+      
+      if (response && response.success) {
+        console.log('✅ Popup: Settings saved successfully');
+        this.showSuccessMessage(`Auto-collapse ${enabled ? 'enabled' : 'disabled'} (${timeoutMinutes} min)`);
+      } else {
+        console.error('❌ Popup: Failed to save settings:', response);
+        this.showErrorMessage('Failed to save auto-collapse settings. Try reloading the extension.');
+      }
+    } catch (error) {
+      console.error('❌ Popup: Error saving auto-collapse settings:', error);
+      
+      // Fallback: try direct storage access
+      try {
+        console.log('🔄 Popup: Attempting fallback storage...');
+        await chrome.storage.local.set({
+          'autoCollapseSettings': {
+            enabled: enabled,
+            timeoutMinutes: timeoutMinutes
+          }
+        });
+        this.showSuccessMessage(`Settings saved (fallback) - Please reload extension`);
+        console.log('✅ Popup: Fallback storage successful');
+      } catch (fallbackError) {
+        console.error('❌ Popup: Fallback also failed:', fallbackError);
+        this.showErrorMessage('Failed to save settings. Please reload the extension and try again.');
+      }
+    }
   }
 }

@@ -21,7 +21,16 @@ const CONFIG = {
   
   STORAGE_KEYS: {
     SUPPORTED_HOSTS: 'supportedHosts',
-    RECENT_TABS: 'recentTabs'
+    RECENT_TABS: 'recentTabs',
+    AUTO_COLLAPSE_SETTINGS: 'autoCollapseSettings',
+    TAB_ACTIVITY: 'tabActivity'
+  },
+  
+  AUTO_COLLAPSE: {
+    DEFAULT_ENABLED: false,
+    DEFAULT_TIMEOUT_MINUTES: 5,
+    MIN_TIMEOUT_MINUTES: 1,
+    MAX_TIMEOUT_MINUTES: 60
   },
   
   DEFAULT_ICONS: {
@@ -37,13 +46,336 @@ const COMMANDS = {
   COPY_CURRENT_URL: 'copy-current-url'
 };
 
+// Extract ACTIONS from CONFIG
 const ACTIONS = {
   ACTIVATE_TAB: 'activateTab',
-  REMOVE_TAB: 'removeTab',
+  REMOVE_TAB: 'removeTab', 
   REFRESH_GROUPED_TABS: 'refreshGroupedTabs',
   SEARCH: 'search',
-  OPEN_QUICK_ACCESS_TAB: 'openQuickAccessTab'
+  OPEN_QUICK_ACCESS_TAB: 'openQuickAccessTab',
+  GET_AUTO_COLLAPSE_SETTINGS: 'getAutoCollapseSettings',
+  UPDATE_AUTO_COLLAPSE_SETTINGS: 'updateAutoCollapseSettings'
 };
+
+// Auto-collapse functionality
+let autoCollapseCheckInterval = null;
+let lastServiceWorkerPing = Date.now();
+
+// Service Worker health check
+function pingServiceWorker() {
+  lastServiceWorkerPing = Date.now();
+  console.log('🏃‍♂️ Service Worker ping');
+}
+
+// Check if Service Worker might be inactive
+function isServiceWorkerLikelyInactive() {
+  const timeSinceLastPing = Date.now() - lastServiceWorkerPing;
+  return timeSinceLastPing > 300000; // 5 minutes without activity
+}
+
+// Restart auto-collapse checker if needed
+async function ensureAutoCollapseRunning() {
+  try {
+    const settings = await getAutoCollapseSettings();
+    if (settings.enabled && !autoCollapseCheckInterval) {
+      console.log('🔄 Restarting auto-collapse checker after SW restart');
+      await startAutoCollapseChecker();
+    }
+  } catch (error) {
+    console.error('❌ Failed to ensure auto-collapse running:', error);
+  }
+}
+
+// Service Worker health monitoring
+setInterval(() => {
+  pingServiceWorker();
+  
+  // Check and restart auto-collapse if needed
+  ensureAutoCollapseRunning();
+}, 60000); // Ping every minute
+
+async function getAutoCollapseSettings(retryCount = 0) {
+  try {
+    const result = await chrome.storage.local.get(CONFIG.STORAGE_KEYS.AUTO_COLLAPSE_SETTINGS);
+    return result[CONFIG.STORAGE_KEYS.AUTO_COLLAPSE_SETTINGS] || {
+      enabled: CONFIG.AUTO_COLLAPSE.DEFAULT_ENABLED,
+      timeoutMinutes: CONFIG.AUTO_COLLAPSE.DEFAULT_TIMEOUT_MINUTES
+    };
+  } catch (error) {
+    console.error('Error getting auto-collapse settings:', error);
+    
+    // Retry for "No SW" errors
+    if (error.message?.includes('No SW') && retryCount < 2) {
+      console.log(`🔄 Retrying settings access (attempt ${retryCount + 1}/3)...`);
+      await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+      return getAutoCollapseSettings(retryCount + 1);
+    }
+    
+    // Return default settings as fallback
+    console.warn('⚙️ Using default auto-collapse settings as fallback');
+    return {
+      enabled: CONFIG.AUTO_COLLAPSE.DEFAULT_ENABLED,
+      timeoutMinutes: CONFIG.AUTO_COLLAPSE.DEFAULT_TIMEOUT_MINUTES
+    };
+  }
+}
+
+async function saveAutoCollapseSettings(settings) {
+  try {
+    await chrome.storage.local.set({
+      [CONFIG.STORAGE_KEYS.AUTO_COLLAPSE_SETTINGS]: settings
+    });
+  } catch (error) {
+    console.error('Error saving auto-collapse settings:', error);
+  }
+}
+
+async function getTabActivity(retryCount = 0) {
+  try {
+    const result = await chrome.storage.local.get(CONFIG.STORAGE_KEYS.TAB_ACTIVITY);
+    return result[CONFIG.STORAGE_KEYS.TAB_ACTIVITY] || {};
+  } catch (error) {
+    console.error('Error getting tab activity:', error);
+    
+    // Retry up to 2 times for "No SW" errors
+    if (error.message?.includes('No SW') && retryCount < 2) {
+      console.log(`🔄 Retrying storage access (attempt ${retryCount + 1}/3)...`);
+      await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
+      return getTabActivity(retryCount + 1);
+    }
+    
+    // Return empty object as fallback
+    console.warn('📊 Using empty tab activity as fallback');
+    return {};
+  }
+}
+
+async function updateTabActivity(tabId, timestamp = Date.now(), retryCount = 0) {
+  try {
+    const tabActivity = await getTabActivity();
+    tabActivity[tabId] = timestamp;
+    await chrome.storage.local.set({
+      [CONFIG.STORAGE_KEYS.TAB_ACTIVITY]: tabActivity
+    });
+    console.log('Updated tab activity for tab:', tabId);
+  } catch (error) {
+    console.error('Error updating tab activity:', error);
+    
+    // Retry for "No SW" errors
+    if (error.message?.includes('No SW') && retryCount < 2) {
+      console.log(`🔄 Retrying tab activity update (attempt ${retryCount + 1}/3)...`);
+      await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+      return updateTabActivity(tabId, timestamp, retryCount + 1);
+    }
+    
+    console.warn('⚠️ Failed to update tab activity - operation skipped');
+  }
+}
+
+async function removeTabActivity(tabId, retryCount = 0) {
+  try {
+    const tabActivity = await getTabActivity();
+    delete tabActivity[tabId];
+    await chrome.storage.local.set({
+      [CONFIG.STORAGE_KEYS.TAB_ACTIVITY]: tabActivity
+    });
+  } catch (error) {
+    console.error('Error removing tab activity:', error);
+    
+    // Retry for "No SW" errors
+    if (error.message?.includes('No SW') && retryCount < 2) {
+      console.log(`🔄 Retrying tab activity removal (attempt ${retryCount + 1}/3)...`);
+      await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+      return removeTabActivity(tabId, retryCount + 1);
+    }
+    
+    console.warn('⚠️ Failed to remove tab activity - operation skipped');
+  }
+}
+
+async function checkInactiveTabGroups() {
+  try {
+    const settings = await getAutoCollapseSettings();
+    if (!settings.enabled) {
+      console.log('Auto-collapse is disabled, skipping check');
+      return;
+    }
+
+    console.log(`🔍 Checking for inactive groups (timeout: ${settings.timeoutMinutes} minutes)`);
+    
+    // Try to get all required data with error handling
+    let tabActivity, tabs, activeTab;
+    
+    try {
+      [tabActivity, tabs, activeTab] = await Promise.all([
+        getTabActivity(),
+        getAllTabs(),
+        getActiveTab()
+      ]);
+    } catch (error) {
+      console.error('❌ Failed to get required data for check:', error);
+      
+      // If Service Worker is dead, try to get basic data and continue with limited functionality
+      if (error.message?.includes('No SW')) {
+        console.warn('🔄 Service Worker unavailable, trying basic functionality...');
+        try {
+          tabs = await getAllTabs();
+          activeTab = await getActiveTab();
+          tabActivity = {}; // Use empty activity data as fallback
+          console.log('⚠️ Continuing with empty activity data');
+        } catch (fallbackError) {
+          console.error('❌ Even basic functionality failed, aborting check');
+          return;
+        }
+      } else {
+        throw error; // Re-throw non-SW errors
+      }
+    }
+    
+    const now = Date.now();
+    const timeoutMs = settings.timeoutMinutes * 60 * 1000;
+    
+    // Group tabs by their tab groups, excluding chrome:// pages
+    const groupedTabs = {};
+    let tabCount = 0;
+    
+    for (const tab of tabs) {
+      if (tab.url.startsWith('chrome://')) {
+        continue;
+      }
+      
+      const groupId = tab.groupId;
+      // Only process tabs that are in actual groups (groupId > 0)
+      if (groupId && groupId > 0) {
+        if (!groupedTabs[groupId]) {
+          groupedTabs[groupId] = [];
+        }
+        groupedTabs[groupId].push(tab);
+        tabCount++;
+      }
+    }
+    
+    const groupCount = Object.keys(groupedTabs).length;
+    console.log(`📊 Found ${groupCount} groups with ${tabCount} tabs to check`);
+    
+    if (groupCount === 0) {
+      console.log('No tab groups found, nothing to collapse');
+      return;
+    }
+    
+    let collapsedCount = 0;
+    
+    // Check each group for inactivity
+    for (const [groupId, groupTabs] of Object.entries(groupedTabs)) {
+      // Skip groups containing the active tab
+      const hasActiveTab = groupTabs.some(tab => tab.id === activeTab?.id);
+      if (hasActiveTab) {
+        console.log(`⚡ Skipping group ${groupId} - contains active tab`);
+        continue;
+      }
+      
+      // Check if all tabs in the group are inactive
+      let allTabsInactive = true;
+      let oldestActivity = now;
+      
+      for (const tab of groupTabs) {
+        // Use tracked activity if available, otherwise use lastAccessed
+        // If neither is available, assume the tab has been inactive for a long time
+        let lastActivity;
+        if (tabActivity[tab.id]) {
+          lastActivity = tabActivity[tab.id];
+        } else if (tab.lastAccessed) {
+          lastActivity = tab.lastAccessed;
+        } else {
+          // If no activity data, assume it's been inactive for longer than timeout
+          lastActivity = now - (timeoutMs + 60000); // Add 1 minute buffer
+        }
+        
+        const timeSinceActivity = now - lastActivity;
+        
+        if (timeSinceActivity <= timeoutMs) {
+          allTabsInactive = false;
+          break; // Early exit if any tab is still active
+        }
+        
+        oldestActivity = Math.min(oldestActivity, lastActivity);
+      }
+      
+      if (allTabsInactive) {
+        const timeSinceActivity = now - oldestActivity;
+        console.log(`📁 Collapsing inactive group: ${groupId} (inactive for ${Math.round(timeSinceActivity / 60000)} minutes)`);
+        
+        try {
+          // Check if group is already collapsed
+          const groupInfo = await chrome.tabGroups.get(parseInt(groupId));
+          if (groupInfo.collapsed) {
+            console.log(`ℹ️ Group ${groupId} is already collapsed`);
+          } else {
+            await chrome.tabGroups.update(parseInt(groupId), { collapsed: true });
+            console.log(`✅ Successfully collapsed group ${groupId}`);
+            collapsedCount++;
+          }
+        } catch (error) {
+          console.error(`❌ Error collapsing tab group ${groupId}:`, error);
+        }
+      }
+    }
+    
+    console.log(`🎯 Check completed - collapsed ${collapsedCount} groups`);
+    
+    // Clean up activity tracking for tabs that no longer exist (less frequent)
+    if (Math.random() < 0.1) { // Only clean up 10% of the time to reduce overhead
+      const currentTabIds = new Set(tabs.map(tab => tab.id));
+      const trackedTabIds = Object.keys(tabActivity).map(id => parseInt(id));
+      
+      let cleanedCount = 0;
+      for (const tabId of trackedTabIds) {
+        if (!currentTabIds.has(tabId)) {
+          await removeTabActivity(tabId);
+          cleanedCount++;
+        }
+      }
+      
+      if (cleanedCount > 0) {
+        console.log(`🧹 Cleaned up ${cleanedCount} stale activity records`);
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ Error checking inactive tab groups:', error);
+  }
+}
+
+async function startAutoCollapseChecker() {
+  if (autoCollapseCheckInterval) {
+    clearInterval(autoCollapseCheckInterval);
+  }
+  
+  const settings = await getAutoCollapseSettings();
+  // 检查间隔设为用户设置的超时时间，但最少1分钟
+  const checkIntervalMs = Math.max(settings.timeoutMinutes * 60 * 1000, 60000);
+  
+  autoCollapseCheckInterval = setInterval(() => {
+    checkInactiveTabGroups();
+  }, checkIntervalMs);
+  
+  console.log(`Auto-collapse checker started (checking every ${settings.timeoutMinutes} minutes)`);
+}
+
+function stopAutoCollapseChecker() {
+  if (autoCollapseCheckInterval) {
+    clearInterval(autoCollapseCheckInterval);
+    autoCollapseCheckInterval = null;
+    console.log('Auto-collapse checker stopped');
+  }
+}
+
+async function initializeAutoCollapse() {
+  const settings = await getAutoCollapseSettings();
+  if (settings.enabled) {
+    await startAutoCollapseChecker();
+  }
+}
 
 // Utility functions
 async function getSupportedHosts() {
@@ -1824,38 +2156,60 @@ chrome.commands.onCommand.addListener(async (command) => {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('📨 Background received message:', request.action);
+  console.log('🔍 Available ACTIONS:', Object.keys(ACTIONS));
+  console.log('🔍 Checking for:', request.action);
   
   const messageHandlers = {
     [ACTIONS.ACTIVATE_TAB]: handleActivateTab,
     [ACTIONS.REMOVE_TAB]: handleRemoveTab,
     [ACTIONS.REFRESH_GROUPED_TABS]: handleRefreshGroupedTabs,
     [ACTIONS.SEARCH]: handleSearch,
-    [ACTIONS.OPEN_QUICK_ACCESS_TAB]: handleOpenQuickAccessTab
+    [ACTIONS.OPEN_QUICK_ACCESS_TAB]: handleOpenQuickAccessTab,
+    [ACTIONS.GET_AUTO_COLLAPSE_SETTINGS]: handleGetAutoCollapseSettings,
+    [ACTIONS.UPDATE_AUTO_COLLAPSE_SETTINGS]: handleUpdateAutoCollapseSettings
   };
 
   const handler = messageHandlers[request.action];
   if (handler) {
     console.log('✅ Found handler for:', request.action);
-    const result = handler(request, sender, sendResponse);
-    if (result === true) {
-      return true;
+    try {
+      const result = handler(request, sender, sendResponse);
+      if (result === true) {
+        return true; // Keep message channel open for async response
+      }
+    } catch (error) {
+      console.error('❌ Handler error:', error);
+      sendResponse({ success: false, error: error.message });
     }
   } else {
     console.log('❌ No handler found for:', request.action);
     console.log('Available handlers:', Object.keys(messageHandlers));
+    sendResponse({ success: false, error: 'Unknown action: ' + request.action });
   }
+  
+  return false; // Close message channel immediately if no async operation
 });
 
-async function handleActivateTab(request) {
-  await activateTab(request.tabId);
-  
-  // Also track this tab activation
-  try {
-    const tab = await chrome.tabs.get(request.tabId);
-    await trackRecentTab(tab);
-  } catch (error) {
-    console.error('Error tracking activated tab:', error);
-  }
+function handleActivateTab(request, sender, sendResponse) {
+  (async () => {
+    try {
+      await activateTab(request.tabId);
+      
+      // Also track this tab activation
+      try {
+        const tab = await chrome.tabs.get(request.tabId);
+        await trackRecentTab(tab);
+      } catch (error) {
+        console.error('Error tracking activated tab:', error);
+      }
+      
+      sendResponse({ success: true });
+    } catch (error) {
+      console.error('Error activating tab:', error);
+      sendResponse({ success: false, error: error.message });
+    }
+  })();
+  return true; // Keep message channel open
 }
 
 // Track processed clicks to prevent duplicates
@@ -1951,24 +2305,30 @@ function handleRemoveTab(request, sender, sendResponse) {
   return true;
 }
 
-async function handleRefreshGroupedTabs() {
-  try {
-    const [alltabs, activeTab, bookmarkTreeNodes] = await Promise.all([
-      getAllTabs(),
-      getActiveTab(),
-      getBookmarkTree()
-    ]);
+function handleRefreshGroupedTabs(request, sender, sendResponse) {
+  (async () => {
+    try {
+      const [alltabs, activeTab, bookmarkTreeNodes] = await Promise.all([
+        getAllTabs(),
+        getActiveTab(),
+        getBookmarkTree()
+      ]);
 
-    if (activeTab) {
-      await chrome.scripting.executeScript({
-        target: { tabId: activeTab.id },
-        function: tabGrouper,
-        args: [bookmarkTreeNodes, alltabs]
-      });
+      if (activeTab) {
+        await chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          function: tabGrouper,
+          args: [bookmarkTreeNodes, alltabs]
+        });
+      }
+      
+      sendResponse({ success: true });
+    } catch (error) {
+      console.error('Refresh error:', error);
+      sendResponse({ success: false, error: error.message });
     }
-  } catch (error) {
-    console.error('Refresh error:', error);
-  }
+  })();
+  return true; // Keep message channel open
 }
 
 function handleSearch(request, sender, sendResponse) {
@@ -1979,6 +2339,69 @@ function handleSearch(request, sender, sendResponse) {
       sendResponse([]);
     });
   return true;
+}
+
+function handleGetAutoCollapseSettings(request, sender, sendResponse) {
+  (async () => {
+    try {
+      console.log('📨 Getting auto-collapse settings...');
+      const settings = await getAutoCollapseSettings();
+      console.log('✅ Auto-collapse settings retrieved:', settings);
+      sendResponse(settings);
+    } catch (error) {
+      console.error('❌ Error getting auto-collapse settings:', error);
+      const defaultSettings = {
+        enabled: CONFIG.AUTO_COLLAPSE.DEFAULT_ENABLED,
+        timeoutMinutes: CONFIG.AUTO_COLLAPSE.DEFAULT_TIMEOUT_MINUTES
+      };
+      console.log('📤 Sending default settings:', defaultSettings);
+      sendResponse(defaultSettings);
+    }
+  })();
+  return true; // Keep message channel open
+}
+
+function handleUpdateAutoCollapseSettings(request, sender, sendResponse) {
+  (async () => {
+    try {
+      console.log('📨 Updating auto-collapse settings...', request.settings);
+      const { enabled, timeoutMinutes } = request.settings;
+      
+      // Validate settings
+      const validatedSettings = {
+        enabled: !!enabled,
+        timeoutMinutes: Math.min(
+          Math.max(timeoutMinutes || CONFIG.AUTO_COLLAPSE.DEFAULT_TIMEOUT_MINUTES, 
+                   CONFIG.AUTO_COLLAPSE.MIN_TIMEOUT_MINUTES),
+          CONFIG.AUTO_COLLAPSE.MAX_TIMEOUT_MINUTES
+        )
+      };
+      
+      console.log('✅ Validated settings:', validatedSettings);
+      
+      await saveAutoCollapseSettings(validatedSettings);
+      console.log('💾 Settings saved successfully');
+      
+      // Restart or stop the auto-collapse checker based on the new settings
+      if (validatedSettings.enabled) {
+        await startAutoCollapseChecker();
+        console.log('🟢 Auto-collapse checker started');
+      } else {
+        stopAutoCollapseChecker();
+        console.log('🔴 Auto-collapse checker stopped');
+      }
+      
+      const response = { success: true, settings: validatedSettings };
+      console.log('📤 Sending response:', response);
+      sendResponse(response);
+    } catch (error) {
+      console.error('❌ Error updating auto-collapse settings:', error);
+      const response = { success: false, error: error.message };
+      console.log('📤 Sending error response:', response);
+      sendResponse(response);
+    }
+  })();
+  return true; // Keep message channel open
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -1998,8 +2421,20 @@ chrome.runtime.onInstalled.addListener(async () => {
         chrome.tabGroups.update(groupId, { title: host });
       });
     }
+
+    // Initialize auto-collapse functionality
+    await initializeAutoCollapse();
   } catch (error) {
     console.error('Installation setup error:', error);
+  }
+});
+
+// Initialize auto-collapse on startup
+chrome.runtime.onStartup.addListener(async () => {
+  try {
+    await initializeAutoCollapse();
+  } catch (error) {
+    console.error('Startup auto-collapse initialization error:', error);
   }
 });
 
@@ -2011,6 +2446,13 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     await trackRecentTab(tab);
   } catch (error) {
     console.error('Error tracking recent tab:', error);
+  }
+
+  // Update tab activity when tab is updated
+  try {
+    await updateTabActivity(tabId);
+  } catch (error) {
+    console.error('Error updating tab activity on update:', error);
   }
 
   try {
@@ -2079,8 +2521,19 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
   try {
     const tab = await chrome.tabs.get(activeInfo.tabId);
     await trackRecentTab(tab);
+    // Update tab activity when tab is activated
+    await updateTabActivity(activeInfo.tabId);
   } catch (error) {
     console.error('Error tracking tab activation:', error);
+  }
+});
+
+// Track tab removal for cleanup
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  try {
+    await removeTabActivity(tabId);
+  } catch (error) {
+    console.error('Error removing tab activity on removal:', error);
   }
 });
 
@@ -2103,3 +2556,19 @@ globalThis.trackCurrentTab = trackCurrentTab;
 
 console.log('TabGrouper background script loaded successfully');
 console.log('You can run trackCurrentTab() in console to manually track current tab');
+
+// Debug: Check if all constants are loaded correctly
+console.log('🔍 Debug: CONFIG loaded:', !!CONFIG);
+console.log('🔍 Debug: ACTIONS loaded:', !!ACTIONS);
+console.log('🔍 Debug: AUTO_COLLAPSE config:', CONFIG?.AUTO_COLLAPSE);
+console.log('🔍 Debug: Available actions:', Object.keys(ACTIONS || {}));
+
+// Initialize auto-collapse on script load (for service worker reactivation)
+setTimeout(async () => {
+  try {
+    await initializeAutoCollapse();
+    console.log('✅ Auto-collapse initialized successfully');
+  } catch (error) {
+    console.error('❌ Error initializing auto-collapse on script load:', error);
+  }
+}, 1000); // Delay initialization by 1 second
