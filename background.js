@@ -279,23 +279,21 @@ async function checkInactiveTabGroups() {
       let oldestActivity = now;
       
       for (const tab of groupTabs) {
-        // Use tracked activity if available, otherwise use lastAccessed
-        // If neither is available, assume the tab has been inactive for a long time
-        let lastActivity;
-        if (tabActivity[tab.id]) {
-          lastActivity = tabActivity[tab.id];
-        } else if (tab.lastAccessed) {
-          lastActivity = tab.lastAccessed;
-        } else {
-          // If no activity data, assume it's been inactive for longer than timeout
-          lastActivity = now - (timeoutMs + 60000); // Add 1 minute buffer
+        let lastActivity = tabActivity[tab.id];
+        
+        // 如果没有时间记录，在当次检查时设置当前时间，下次检查就能收起了
+        if (!lastActivity) {
+          lastActivity = now;
+          await updateTabActivity(tab.id, now); // 记录当前时间
+          console.log(`📝 Set initial time for tab ${tab.id}: ${tab.title.substring(0, 30)}`);
         }
         
         const timeSinceActivity = now - lastActivity;
         
+        // 如果任何一个标签页在超时时间内活跃过，就不收起整个组
         if (timeSinceActivity <= timeoutMs) {
           allTabsInactive = false;
-          break; // Early exit if any tab is still active
+          break;
         }
         
         oldestActivity = Math.min(oldestActivity, lastActivity);
@@ -2438,6 +2436,16 @@ chrome.runtime.onStartup.addListener(async () => {
   }
 });
 
+// Tab创建时记录时间
+chrome.tabs.onCreated.addListener(async (tab) => {
+  try {
+    await updateTabActivity(tab.id);
+    console.log(`📝 New tab created and time recorded: ${tab.id}`);
+  } catch (error) {
+    console.error('Error recording tab creation time:', error);
+  }
+});
+
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete' || !tab.url) return;
 
@@ -2451,6 +2459,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   // Update tab activity when tab is updated
   try {
     await updateTabActivity(tabId);
+    console.log(`🔄 Tab updated and time recorded: ${tabId}`);
   } catch (error) {
     console.error('Error updating tab activity on update:', error);
   }

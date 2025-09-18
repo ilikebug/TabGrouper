@@ -331,16 +331,34 @@ export class PopupManager {
       const autoCollapseTimeout = document.getElementById('auto-collapse-timeout');
       const autoCollapseSettings = document.getElementById('auto-collapse-settings');
       
-      if (autoCollapseEnabled && response) {
-        autoCollapseEnabled.checked = response.enabled;
-        this.updateAutoCollapseUI(response.enabled);
+      // 使用response或默认值
+      const enabled = response ? response.enabled : false;
+      const timeoutMinutes = response ? response.timeoutMinutes : 5;
+      
+      if (autoCollapseEnabled) {
+        autoCollapseEnabled.checked = enabled;
+        this.updateAutoCollapseUI(enabled);
       }
       
-      if (autoCollapseTimeout && response) {
-        autoCollapseTimeout.value = response.timeoutMinutes;
+      if (autoCollapseTimeout) {
+        autoCollapseTimeout.value = timeoutMinutes;
       }
+      
     } catch (error) {
       console.error('Error loading auto-collapse settings:', error);
+      
+      // 出错时设置默认值
+      const autoCollapseEnabled = document.getElementById('auto-collapse-enabled');
+      const autoCollapseTimeout = document.getElementById('auto-collapse-timeout');
+      
+      if (autoCollapseEnabled) {
+        autoCollapseEnabled.checked = false;
+        this.updateAutoCollapseUI(false);
+      }
+      
+      if (autoCollapseTimeout) {
+        autoCollapseTimeout.value = 5;
+      }
     }
   }
 
