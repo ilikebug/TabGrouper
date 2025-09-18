@@ -429,7 +429,6 @@ export class PopupManager {
    */
   async saveAutoCollapseSettings(enabled, timeoutMinutes) {
     try {
-      console.log('📨 Popup: Saving auto-collapse settings...', { enabled, timeoutMinutes });
       
       // Add timeout to prevent hanging
       const messagePromise = chrome.runtime.sendMessage({
@@ -446,21 +445,17 @@ export class PopupManager {
       
       const response = await Promise.race([messagePromise, timeoutPromise]);
       
-      console.log('📨 Popup: Received response:', response);
-      
       if (response && response.success) {
-        console.log('✅ Popup: Settings saved successfully');
         this.showSuccessMessage(`Auto-collapse ${enabled ? 'enabled' : 'disabled'} (${timeoutMinutes} min)`);
       } else {
-        console.error('❌ Popup: Failed to save settings:', response);
+        console.error('Failed to save settings:', response);
         this.showErrorMessage('Failed to save auto-collapse settings. Try reloading the extension.');
       }
     } catch (error) {
-      console.error('❌ Popup: Error saving auto-collapse settings:', error);
+      console.error('Error saving auto-collapse settings:', error);
       
       // Fallback: try direct storage access
       try {
-        console.log('🔄 Popup: Attempting fallback storage...');
         await chrome.storage.local.set({
           'autoCollapseSettings': {
             enabled: enabled,
@@ -468,9 +463,8 @@ export class PopupManager {
           }
         });
         this.showSuccessMessage(`Settings saved (fallback) - Please reload extension`);
-        console.log('✅ Popup: Fallback storage successful');
       } catch (fallbackError) {
-        console.error('❌ Popup: Fallback also failed:', fallbackError);
+        console.error('Fallback also failed:', fallbackError);
         this.showErrorMessage('Failed to save settings. Please reload the extension and try again.');
       }
     }

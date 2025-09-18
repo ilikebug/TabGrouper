@@ -10,7 +10,8 @@
     "tabGroups",
     "bookmarks",
     "storage",
-    "clipboardWrite"
+    "clipboardWrite",
+    "alarms"
   ],
   "background": {
     "service_worker": "background.js"

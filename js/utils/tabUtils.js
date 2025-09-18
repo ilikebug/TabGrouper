@@ -27,24 +27,58 @@ export async function groupTabsByHost(tabs) {
 }
 
 /**
- * Activates a specific tab
+ * Activates a specific tab with retry logic for drag operations
  * @param {number} tabId - The ID of the tab to activate
+ * @param {number} retryCount - Current retry attempt
+ * @returns {Promise<void>}
  */
-export function activateTab(tabId) {
-  chrome.tabs.update(tabId, { active: true });
+export async function activateTab(tabId, retryCount = 0) {
+  const maxRetries = 3;
+  const baseDelay = 300;
+  
+  try {
+    await chrome.tabs.update(tabId, { active: true });
+    console.log(`✅ Tab ${tabId} activated successfully`);
+  } catch (error) {
+    if (error.message.includes('user may be dragging') && retryCount < maxRetries) {
+      const delay = baseDelay * (retryCount + 1);
+      console.log(`⏳ Tab dragging detected, retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+      
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return activateTab(tabId, retryCount + 1);
+    } else {
+      console.error(`❌ Failed to activate tab ${tabId}:`, error.message);
+      throw error;
+    }
+  }
 }
 
 /**
- * Removes a specific tab
+ * Removes a specific tab with retry logic for drag operations
  * @param {number} tabId - The ID of the tab to remove
+ * @param {number} retryCount - Current retry attempt
  * @returns {Promise<boolean>} - Success status
  */
-export function removeTab(tabId) {
-  return new Promise((resolve) => {
-    chrome.tabs.remove(tabId, () => {
-      resolve(true);
-    });
-  });
+export async function removeTab(tabId, retryCount = 0) {
+  const maxRetries = 3;
+  const baseDelay = 300;
+  
+  try {
+    await chrome.tabs.remove(tabId);
+    console.log(`✅ Tab ${tabId} removed successfully`);
+    return true;
+  } catch (error) {
+    if (error.message.includes('user may be dragging') && retryCount < maxRetries) {
+      const delay = baseDelay * (retryCount + 1);
+      console.log(`⏳ Tab dragging detected, retrying removal in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+      
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return removeTab(tabId, retryCount + 1);
+    } else {
+      console.error(`❌ Failed to remove tab ${tabId}:`, error.message);
+      throw error;
+    }
+  }
 }
 
 /**
