@@ -1718,53 +1718,99 @@ chrome.commands.onCommand.addListener(async (command) => {
     try {
       const activeTab = await getActiveTab();
       if (activeTab && activeTab.url) {
-        // Copy URL to clipboard using the scripting API
-        await chrome.scripting.executeScript({
-          target: { tabId: activeTab.id },
-          function: () => {
-            navigator.clipboard.writeText(window.location.href).then(() => {
-              // Show a temporary notification
-              const notification = document.createElement('div');
-              notification.style.cssText = `
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                background: rgba(16, 185, 129, 0.95);
-                color: white;
-                padding: 12px 20px;
-                border-radius: 8px;
-                font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                font-size: 14px;
-                font-weight: 600;
-                z-index: 10000;
-                box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-                backdrop-filter: blur(8px);
-                animation: slideInFromTop 0.3s ease-out;
-              `;
-              notification.textContent = '📋 URL copied to clipboard!';
-              
-              // Add animation styles
-              const style = document.createElement('style');
-              style.textContent = `
-                @keyframes slideInFromTop {
-                  from { transform: translateY(-100%); opacity: 0; }
-                  to { transform: translateY(0); opacity: 1; }
+        console.log('Copying URL:', activeTab.url);
+        
+        // Use a simpler approach without user permission prompts
+        if (!activeTab.url.startsWith('chrome://')) {
+          await chrome.scripting.executeScript({
+            target: { tabId: activeTab.id },
+            function: (urlToCopy) => {
+              // Function to copy text without permission prompts
+              function copyToClipboard(text) {
+                // Method 1: Try the modern clipboard API first (might work silently)
+                if (navigator.clipboard && window.isSecureContext) {
+                  return navigator.clipboard.writeText(text).catch(() => {
+                    // If that fails, use the fallback method
+                    return fallbackCopyTextToClipboard(text);
+                  });
+                } else {
+                  return fallbackCopyTextToClipboard(text);
                 }
-              `;
-              document.head.appendChild(style);
-              document.body.appendChild(notification);
+              }
               
-              // Remove notification after 2 seconds
-              setTimeout(() => {
-                notification.remove();
-                style.remove();
-              }, 2000);
-            }).catch(() => {
-              console.error('Failed to copy URL to clipboard');
-            });
-          }
-        });
-        console.log('URL copied:', activeTab.url);
+              function fallbackCopyTextToClipboard(text) {
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                textArea.style.position = "fixed";
+                textArea.style.left = "-999999px";
+                textArea.style.top = "-999999px";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                
+                return new Promise((resolve, reject) => {
+                  try {
+                    const successful = document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    if (successful) {
+                      resolve();
+                    } else {
+                      reject(new Error('Copy command failed'));
+                    }
+                  } catch (err) {
+                    document.body.removeChild(textArea);
+                    reject(err);
+                  }
+                });
+              }
+              
+              // Copy the URL
+              copyToClipboard(urlToCopy).then(() => {
+                // Show success notification
+                const notification = document.createElement('div');
+                notification.style.cssText = `
+                  position: fixed;
+                  top: 20px;
+                  right: 20px;
+                  background: rgba(16, 185, 129, 0.95);
+                  color: white;
+                  padding: 12px 20px;
+                  border-radius: 8px;
+                  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                  font-size: 14px;
+                  font-weight: 600;
+                  z-index: 10000;
+                  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+                  backdrop-filter: blur(8px);
+                  animation: slideInFromTop 0.3s ease-out;
+                `;
+                notification.textContent = '📋 URL copied to clipboard!';
+                
+                // Add animation styles
+                const style = document.createElement('style');
+                style.textContent = `
+                  @keyframes slideInFromTop {
+                    from { transform: translateY(-100%); opacity: 0; }
+                    to { transform: translateY(0); opacity: 1; }
+                  }
+                `;
+                document.head.appendChild(style);
+                document.body.appendChild(notification);
+                
+                // Remove notification after 2 seconds
+                setTimeout(() => {
+                  notification.remove();
+                  style.remove();
+                }, 2000);
+              }).catch((err) => {
+                console.error('Failed to copy URL:', err);
+              });
+            },
+            args: [activeTab.url]
+          });
+        } else {
+          console.warn('Cannot copy URL from chrome:// pages');
+        }
       } else {
         console.warn('No active tab found or invalid URL');
       }

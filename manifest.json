@@ -9,7 +9,8 @@
     "tabs",
     "tabGroups",
     "bookmarks",
-    "storage"
+    "storage",
+    "clipboardWrite"
   ],
   "background": {
     "service_worker": "background.js"
