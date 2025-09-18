@@ -1373,6 +1373,23 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         margin-bottom: 8px;
         opacity: 0.6;
       }
+      
+      /* 键盘导航选中样式 */
+      .keyboard-selected {
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%) !important;
+        border: 2px solid rgba(99, 102, 241, 0.4) !important;
+        border-radius: 8px !important;
+        transform: translateX(4px) !important;
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2) !important;
+      }
+      
+      /* 活跃区域样式 */
+      .section-active {
+        background: rgba(99, 102, 241, 0.05) !important;
+        border-radius: 12px !important;
+        border: 1px solid rgba(99, 102, 241, 0.2) !important;
+        transition: all 0.3s ease !important;
+      }
     `;
 
     const container = document.createElement('div');
@@ -1447,6 +1464,10 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
           updateSearchResults({ tabs, bookmarks }, bookmarkList, tabList);
           displaySidebarRecentTabs(recentTabsList, filteredRecentTabs, query);
           
+          // 重置键盘选中状态
+          currentSection = 0;
+          selectedIndex = -1;
+          
           // Update sidebar title with search results count
           if (filteredRecentTabs.length > 0) {
             searchBox._sidebarTitle.innerHTML = `⚡ Quick Access (${filteredRecentTabs.length} found)`;
@@ -1459,6 +1480,11 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         displayGroupedTabs(groupedTabs, tabList);
         displayBookmarks(bookmarkTreeNodes[0]?.children || [], bookmarkList);
         displaySidebarRecentTabs(recentTabsList);
+        
+        // 重置键盘选中状态
+        currentSection = 0;
+        selectedIndex = -1;
+        
         // Reset sidebar title when not searching
         searchBox._sidebarTitle.innerHTML = '⚡ Quick Access';
       }
@@ -1565,10 +1591,144 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       });
     }, 0);
 
+    // 当前选中的区域和索引
+    let currentSection = 0; // 0: bookmarks, 1: tabs, 2: sidebar
+    let selectedIndex = -1;
+    
+    const getSections = () => {
+      return [
+        {
+          name: 'bookmarks',
+          items: Array.from(bookmarkList.querySelectorAll('.bookmark-link')),
+          container: bookmarkSection
+        },
+        {
+          name: 'tabs', 
+          items: Array.from(tabList.querySelectorAll('.tab-link')),
+          container: tabSection
+        },
+        {
+          name: 'sidebar',
+          items: Array.from(recentTabsList.querySelectorAll('.sidebar-recent-link')),
+          container: sidebar
+        }
+      ];
+    };
+    
+    const updateSelection = (sectionIndex, itemIndex) => {
+      const sections = getSections();
+      
+      // 移除所有选中样式
+      sections.forEach(section => {
+        section.items.forEach(item => item.classList.remove('keyboard-selected'));
+        section.container.classList.remove('section-active');
+      });
+      
+      if (sectionIndex >= 0 && sectionIndex < sections.length) {
+        const section = sections[sectionIndex];
+        
+        if (itemIndex >= 0 && itemIndex < section.items.length) {
+          currentSection = sectionIndex;
+          selectedIndex = itemIndex;
+          
+          const selectedItem = section.items[selectedIndex];
+          selectedItem.classList.add('keyboard-selected');
+          selectedItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          
+          // 高亮当前活跃区域
+          section.container.classList.add('section-active');
+        } else if (section.items.length > 0) {
+          // 如果索引越界但区域有项目，选择第一个或最后一个
+          const newIndex = itemIndex < 0 ? 0 : section.items.length - 1;
+          updateSelection(sectionIndex, newIndex);
+        }
+      } else {
+        currentSection = 0;
+        selectedIndex = -1;
+      }
+    };
+    
+    const switchToSection = (direction) => {
+      const sections = getSections();
+      let newSection = currentSection;
+      
+      if (direction > 0) {
+        // Tab: 下一个区域
+        do {
+          newSection = (newSection + 1) % sections.length;
+        } while (sections[newSection].items.length === 0 && newSection !== currentSection);
+      } else {
+        // Shift+Tab: 上一个区域
+        do {
+          newSection = newSection === 0 ? sections.length - 1 : newSection - 1;
+        } while (sections[newSection].items.length === 0 && newSection !== currentSection);
+      }
+      
+      if (sections[newSection].items.length > 0) {
+        updateSelection(newSection, 0);
+      }
+    };
+
     // Handle specific keyboard events for the input
     input.addEventListener('keydown', (event) => {
       event.stopPropagation();
       event.stopImmediatePropagation();
+      
+      const sections = getSections();
+      
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        const direction = event.shiftKey ? -1 : 1;
+        switchToSection(direction);
+        return;
+      }
+      
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        if (selectedIndex === -1) {
+          // 没有选中任何项目，选择第一个有内容的区域的第一个项目
+          for (let i = 0; i < sections.length; i++) {
+            if (sections[i].items.length > 0) {
+              updateSelection(i, 0);
+              break;
+            }
+          }
+        } else {
+          // 在当前区域内向下导航
+          const currentSectionItems = sections[currentSection].items;
+          const newIndex = selectedIndex < currentSectionItems.length - 1 ? selectedIndex + 1 : 0;
+          updateSelection(currentSection, newIndex);
+        }
+        return;
+      }
+      
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (selectedIndex === -1) {
+          // 没有选中任何项目，选择第一个有内容的区域的最后一个项目
+          for (let i = 0; i < sections.length; i++) {
+            if (sections[i].items.length > 0) {
+              updateSelection(i, sections[i].items.length - 1);
+              break;
+            }
+          }
+        } else {
+          // 在当前区域内向上导航
+          const currentSectionItems = sections[currentSection].items;
+          const newIndex = selectedIndex > 0 ? selectedIndex - 1 : currentSectionItems.length - 1;
+          updateSelection(currentSection, newIndex);
+        }
+        return;
+      }
+      
+      if (event.key === 'Enter' && selectedIndex >= 0) {
+        event.preventDefault();
+        const currentSectionItems = sections[currentSection].items;
+        if (currentSectionItems[selectedIndex]) {
+          currentSectionItems[selectedIndex].click();
+          return;
+        }
+      }
       
       if (event.key === 'Escape') {
         // Properly blur the input before removal
