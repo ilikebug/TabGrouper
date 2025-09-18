@@ -21,6 +21,13 @@
         "mac": "Command+H"
       },
       "description": "Open TabGrouper"
+    },
+    "copy-current-url": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+C",
+        "mac": "Command+Shift+C"
+      },
+      "description": "Copy current page URL"
     }
   },
   "host_permissions": [

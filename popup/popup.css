@@ -145,6 +145,8 @@ button:active {
 
 #host-list {
     flex: 1;
+    min-height: 200px;
+    max-height: 300px;
     overflow-y: auto;
     background: rgba(255, 255, 255, 0.8);
     border: 1px solid rgba(226, 232, 240, 0.6);
@@ -294,4 +296,69 @@ button:active {
 
 ::-webkit-scrollbar-thumb:hover {
     background: rgba(148, 163, 184, 0.6);
+}
+
+/* Shortcuts section styles */
+#shortcuts-section {
+    padding: 16px;
+    background: rgba(248, 250, 252, 0.6);
+    border-radius: 16px;
+    border: 1px solid rgba(226, 232, 240, 0.6);
+}
+
+.shortcut-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.3);
+}
+
+.shortcut-item:last-of-type {
+    border-bottom: none;
+    margin-bottom: 16px;
+}
+
+.shortcut-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+}
+
+.shortcut-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #374151;
+}
+
+.shortcut-key {
+    font-size: 12px;
+    font-weight: 700;
+    color: #6366f1;
+    background: rgba(99, 102, 241, 0.1);
+    padding: 4px 8px;
+    border-radius: 6px;
+    display: inline-block;
+    width: fit-content;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+}
+
+#manage-shortcuts {
+    width: 100%;
+    height: 36px;
+    font-size: 13px;
+    font-weight: 600;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 3px 8px rgba(102, 126, 234, 0.25);
+}
+
+#manage-shortcuts:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(102, 126, 234, 0.35);
 }

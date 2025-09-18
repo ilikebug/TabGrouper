@@ -18,6 +18,7 @@ export class PopupManager {
     await this.loadSupportedHosts();
     this.setupEventListeners();
     this.displayHosts();
+    await this.loadShortcuts();
   }
 
   /**
@@ -49,6 +50,12 @@ export class PopupManager {
         });
       }
     });
+
+    // Setup shortcuts management
+    const manageShortcutsButton = document.getElementById('manage-shortcuts');
+    if (manageShortcutsButton) {
+      manageShortcutsButton.addEventListener('click', () => this.openShortcutsManager());
+    }
   }
 
   /**
@@ -250,5 +257,50 @@ export class PopupManager {
     setTimeout(() => {
       message.style.display = 'none';
     }, CONFIG.UI.MESSAGE_HIDE_DELAY);
+  }
+
+  /**
+   * Load and display current shortcuts
+   */
+  async loadShortcuts() {
+    try {
+      const commands = await chrome.commands.getAll();
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      
+      commands.forEach(command => {
+        let shortcutElement = null;
+        
+        if (command.name === 'open-search-box') {
+          shortcutElement = document.getElementById('search-shortcut');
+        } else if (command.name === 'copy-current-url') {
+          shortcutElement = document.getElementById('copy-shortcut');
+        }
+        
+        if (shortcutElement) {
+          if (command.shortcut) {
+            // Convert shortcuts for display (Windows/Linux use Ctrl, Mac uses Cmd)
+            let shortcut = command.shortcut;
+            if (isMac) {
+              shortcut = shortcut.replace(/Ctrl/g, 'Cmd');
+            }
+            shortcutElement.textContent = shortcut;
+          } else {
+            shortcutElement.textContent = 'Not set';
+            shortcutElement.style.opacity = '0.5';
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Error loading shortcuts:', error);
+    }
+  }
+
+  /**
+   * Open Chrome's shortcuts management page
+   */
+  openShortcutsManager() {
+    chrome.tabs.create({
+      url: 'chrome://extensions/shortcuts'
+    });
   }
 }

@@ -33,7 +33,8 @@ const CONFIG = {
 };
 
 const COMMANDS = {
-  OPEN_SEARCH_BOX: 'open-search-box'
+  OPEN_SEARCH_BOX: 'open-search-box',
+  COPY_CURRENT_URL: 'copy-current-url'
 };
 
 const ACTIONS = {
@@ -1710,6 +1711,65 @@ chrome.commands.onCommand.addListener(async (command) => {
       }
     } catch (error) {
       console.error('Script execution error:', error);
+    }
+  } else if (command === COMMANDS.COPY_CURRENT_URL) {
+    console.log('Processing copy-current-url command');
+    
+    try {
+      const activeTab = await getActiveTab();
+      if (activeTab && activeTab.url) {
+        // Copy URL to clipboard using the scripting API
+        await chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          function: () => {
+            navigator.clipboard.writeText(window.location.href).then(() => {
+              // Show a temporary notification
+              const notification = document.createElement('div');
+              notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: rgba(16, 185, 129, 0.95);
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 14px;
+                font-weight: 600;
+                z-index: 10000;
+                box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+                backdrop-filter: blur(8px);
+                animation: slideInFromTop 0.3s ease-out;
+              `;
+              notification.textContent = '📋 URL copied to clipboard!';
+              
+              // Add animation styles
+              const style = document.createElement('style');
+              style.textContent = `
+                @keyframes slideInFromTop {
+                  from { transform: translateY(-100%); opacity: 0; }
+                  to { transform: translateY(0); opacity: 1; }
+                }
+              `;
+              document.head.appendChild(style);
+              document.body.appendChild(notification);
+              
+              // Remove notification after 2 seconds
+              setTimeout(() => {
+                notification.remove();
+                style.remove();
+              }, 2000);
+            }).catch(() => {
+              console.error('Failed to copy URL to clipboard');
+            });
+          }
+        });
+        console.log('URL copied:', activeTab.url);
+      } else {
+        console.warn('No active tab found or invalid URL');
+      }
+    } catch (error) {
+      console.error('Copy URL error:', error);
     }
   } else {
     console.log('Unknown command:', command);
