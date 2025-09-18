@@ -1615,6 +1615,29 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
             document.body.style.overflow = '';
             document.documentElement.style.overflow = '';
             return;
+          } else {
+            // Not a URL, treat as search query
+            const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(inputValue)}`;
+            console.log('🔍 Searching for:', inputValue);
+            
+            // Open search in new tab
+            chrome.runtime.sendMessage({
+              action: 'openQuickAccessTab',
+              url: searchUrl,
+              clickId: Date.now() + Math.random()
+            });
+            
+            // Close the interface
+            if (searchBox._cleanup) searchBox._cleanup();
+            searchBox.remove();
+            
+            // Restore focus to document body
+            document.body.focus();
+            
+            // Re-enable page scrolling
+            document.body.style.overflow = '';
+            document.documentElement.style.overflow = '';
+            return;
           }
         }
       }
