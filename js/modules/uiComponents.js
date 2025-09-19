@@ -133,6 +133,7 @@ function createFaviconElement(url, fallbackIcon = CONFIG.DEFAULT_ICONS.SEARCH) {
 function createDeleteButton(onClickHandler) {
   const button = document.createElement('button');
   button.textContent = CONFIG.DEFAULT_ICONS.DELETE;
+  button.title = '关闭标签页';
   
   // Apply styles directly
   button.style.all = 'unset';
@@ -146,17 +147,54 @@ function createDeleteButton(onClickHandler) {
   button.style.backgroundColor = '#f0f0f0';
   button.style.color = '#666';
   button.style.fontSize = '12px';
-  button.style.marginRight = '8px';
   button.style.transition = 'all 0.2s';
   
   button.onmouseover = () => {
-    button.style.backgroundColor = '#e0e0e0';
-    button.style.color = '#333';
+    button.style.backgroundColor = '#ef4444';
+    button.style.color = 'white';
   };
   
   button.onmouseout = () => {
     button.style.backgroundColor = '#f0f0f0';
     button.style.color = '#666';
+  };
+  
+  if (onClickHandler) {
+    button.addEventListener('click', onClickHandler);
+  }
+  
+  return button;
+}
+
+function createBookmarkButton(onClickHandler) {
+  const button = document.createElement('button');
+  button.textContent = '⭐';
+  button.title = '收藏此页面';
+  
+  // Apply styles directly
+  button.style.all = 'unset';
+  button.style.cursor = 'pointer';
+  button.style.display = 'flex';
+  button.style.alignItems = 'center';
+  button.style.justifyContent = 'center';
+  button.style.width = '20px';
+  button.style.height = '20px';
+  button.style.borderRadius = '50%';
+  button.style.backgroundColor = '#f0f0f0';
+  button.style.color = '#666';
+  button.style.fontSize = '12px';
+  button.style.transition = 'all 0.2s';
+  
+  button.onmouseover = () => {
+    button.style.backgroundColor = '#fbbf24';
+    button.style.color = 'white';
+    button.style.transform = 'scale(1.1)';
+  };
+  
+  button.onmouseout = () => {
+    button.style.backgroundColor = '#f0f0f0';
+    button.style.color = '#666';
+    button.style.transform = 'scale(1)';
   };
   
   if (onClickHandler) {
@@ -190,6 +228,7 @@ export async function createSearchBox(bookmarkTreeNodes, alltabs) {
 
   const style = createSearchBoxStyles();
   const container = createContainer();
+  const header = createSearchHeader();
   const input = createSearchInput();
   const listsContainer = createListsContainer();
   const [bookmarkList, tabList] = createLists();
@@ -218,6 +257,7 @@ export async function createSearchBox(bookmarkTreeNodes, alltabs) {
   // Assemble UI
   listsContainer.appendChild(bookmarkList);
   listsContainer.appendChild(tabList);
+  container.appendChild(header);
   container.appendChild(input);
   container.appendChild(listsContainer);
   shadow.appendChild(style);
@@ -248,11 +288,14 @@ function createSearchBoxStyles() {
       left: 50%;
       transform: translate(-50%, -50%);
       z-index: 10000;
-      background-color: #ffffff;
-      border: 1px solid #ccc;
-      border-radius: 12px;
-      padding: 20px;
-      box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 20px;
+      padding: 0;
+      box-shadow: 
+        0 20px 40px rgba(0, 0, 0, 0.1),
+        0 0 0 1px rgba(255, 255, 255, 0.5);
       width: ${CONFIG.UI.WIDTH_PERCENTAGE}%;
       min-width: ${CONFIG.UI.MIN_WIDTH}px;
       height: ${CONFIG.UI.HEIGHT_PERCENTAGE}%;
@@ -261,21 +304,85 @@ function createSearchBoxStyles() {
       flex-direction: column;
       font-size: 14px !important;
       line-height: 1.4 !important;
+      overflow: hidden;
+    }
+
+    .search-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .search-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 18px;
+    }
+
+    .search-title .icon {
+      font-size: 20px;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .bookmark-btn {
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      padding: 8px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .bookmark-btn:hover {
+      background: rgba(255, 255, 255, 0.25);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .bookmark-btn .icon {
+      font-size: 14px;
+    }
+
+    .bookmark-btn .shortcut {
+      font-size: 11px;
+      opacity: 0.8;
+      background: rgba(255, 255, 255, 0.2);
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-left: 4px;
     }
     
     input {
       width: 100%;
-      padding: 12px;
-      border: 1px solid #ddd;
-      border-radius: 6px;
+      padding: 12px 20px;
+      border: none;
+      border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+      border-radius: 0;
       box-sizing: border-box;
-      background-color: #ffffff !important;
-      margin-bottom: 15px;
+      background-color: transparent !important;
+      margin: 0;
       font-size: 14px !important;
       outline: none;
-      color: #000000 !important;
-      -webkit-text-fill-color: #000000 !important;
+      color: #1e293b !important;
+      -webkit-text-fill-color: #1e293b !important;
       opacity: 1 !important;
+      flex-shrink: 0;
     }
     
     input::placeholder {
@@ -285,10 +392,10 @@ function createSearchBoxStyles() {
     }
     
     input:focus {
-      border-color: #4a90e2;
-      box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
-      color: #000000 !important;
-      -webkit-text-fill-color: #000000 !important;
+      border-bottom-color: rgba(99, 102, 241, 0.6);
+      box-shadow: 0 1px 0 rgba(99, 102, 241, 0.6);
+      color: #1e293b !important;
+      -webkit-text-fill-color: #1e293b !important;
     }
     
     #lists {
@@ -297,6 +404,7 @@ function createSearchBoxStyles() {
       flex: 1;
       overflow: auto;
       gap: 20px;
+      padding: 20px;
     }
     
     ul {
@@ -313,11 +421,12 @@ function createSearchBoxStyles() {
     a {
       display: flex !important;
       align-items: center !important;
-      padding: 5px 0 !important;
+      padding: 8px 0 !important;
       color: #333 !important;
       text-decoration: none !important;
       border-bottom: 1px solid #ddd !important;
       font-size: 14px !important;
+      min-height: 32px !important;
     }
     
     a:hover {
@@ -340,16 +449,16 @@ function createSearchBoxStyles() {
       width: 20px;
       height: 20px;
       border-radius: 50%;
-      background-color: #f0f0f0;
-      color: #666;
+      background-color: rgba(248, 250, 252, 0.8);
+      color: #6b7280;
       font-size: 12px;
-      margin-right: 8px;
-      transition: all 0.2s;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 1px solid rgba(226, 232, 240, 0.6);
     }
     
     button:hover {
-      background-color: #e0e0e0;
-      color: #333;
+      transform: scale(1.05);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     }
     
     ::-webkit-scrollbar {
@@ -370,6 +479,28 @@ function createSearchBoxStyles() {
     ::-webkit-scrollbar-thumb:hover {
       background: #999;
     }
+
+    @keyframes slideInRight {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    @keyframes slideOutRight {
+      from {
+        transform: translateX(0);
+        opacity: 1;
+      }
+      to {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+    }
   `;
   return style;
 }
@@ -378,6 +509,47 @@ function createContainer() {
   const container = document.createElement('div');
   container.id = 'container';
   return container;
+}
+
+function createSearchHeader() {
+  const header = document.createElement('div');
+  header.className = 'search-header';
+  
+  // Detect platform for correct shortcut display
+  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+  const shortcutKey = isMac ? 'Cmd+S' : 'Ctrl+S';
+  const shortcutTitle = isMac ? '保存当前页面为书签 (Cmd+S)' : '保存当前页面为书签 (Ctrl+S)';
+  
+  header.innerHTML = `
+    <div class="search-title">
+      <span class="icon">🚀</span>
+      <span class="title">TabGrouper</span>
+    </div>
+    <div class="header-actions">
+      <button class="bookmark-btn" id="bookmark-current-tab" title="${shortcutTitle}">
+        <span class="icon">⭐</span>
+        <span class="text">保存书签</span>
+        <span class="shortcut">${shortcutKey}</span>
+      </button>
+    </div>
+  `;
+
+  // Setup bookmark button event
+  const bookmarkBtn = header.querySelector('#bookmark-current-tab');
+  if (bookmarkBtn) {
+    bookmarkBtn.addEventListener('click', async () => {
+      try {
+        // Dynamic import to avoid circular dependencies
+        const { BookmarkManager } = await import('./bookmarkManager.js');
+        const bookmarkManager = new BookmarkManager();
+        await bookmarkManager.showBookmarkDialog();
+      } catch (error) {
+        console.error('Error loading bookmark manager:', error);
+      }
+    });
+  }
+
+  return header;
 }
 
 function createSearchInput() {
@@ -437,9 +609,20 @@ function setupInputHandling(input, searchBox) {
     });
   }, CONFIG.UI.INPUT_FOCUS_DELAY);
 
-  input.addEventListener('keydown', (event) => {
+  input.addEventListener('keydown', async (event) => {
     if (event.key === 'Escape') {
       searchBox.remove();
+    }
+    // Ctrl+S or Cmd+S to save bookmark
+    if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+      event.preventDefault();
+      try {
+        const { BookmarkManager } = await import('./bookmarkManager.js');
+        const bookmarkManager = new BookmarkManager();
+        await bookmarkManager.showBookmarkDialog();
+      } catch (error) {
+        console.error('Error loading bookmark manager:', error);
+      }
     }
     event.stopPropagation();
   });
@@ -510,6 +693,17 @@ function createTabListItem(tab) {
   const listItem = document.createElement('li');
   listItem.style.display = 'flex';
   listItem.style.alignItems = 'center';
+  listItem.style.gap = '4px';
+
+  const actionsContainer = document.createElement('div');
+  actionsContainer.style.display = 'flex';
+  actionsContainer.style.gap = '4px';
+  actionsContainer.style.marginRight = '8px';
+
+  const bookmarkButton = createBookmarkButton((event) => {
+    event.stopPropagation();
+    handleTabBookmark(tab);
+  });
 
   const deleteButton = createDeleteButton((event) => {
     event.stopPropagation();
@@ -518,7 +712,9 @@ function createTabListItem(tab) {
 
   const link = createTabLink(tab);
 
-  listItem.appendChild(deleteButton);
+  actionsContainer.appendChild(bookmarkButton);
+  actionsContainer.appendChild(deleteButton);
+  listItem.appendChild(actionsContainer);
   listItem.appendChild(link);
   return listItem;
 }
@@ -544,6 +740,83 @@ function createTabLink(tab) {
   });
 
   return link;
+}
+
+async function handleTabBookmark(tab) {
+  try {
+    // Dynamic import to avoid circular dependencies
+    const { BookmarkManager } = await import('./bookmarkManager.js');
+    const bookmarkManager = new BookmarkManager();
+    await bookmarkManager.showBookmarkDialog(tab);
+  } catch (error) {
+    console.error('Error loading bookmark manager:', error);
+  }
+}
+
+async function handleBookmarkDelete(bookmarkId) {
+  try {
+    // Ask for confirmation
+    if (confirm('确定要删除这个书签吗？')) {
+      await chrome.bookmarks.remove(bookmarkId);
+      
+      // Show success message
+      showBookmarkMessage('书签删除成功！', 'success');
+      
+      // Refresh the current search/display
+      const input = document.querySelector(`#${CONFIG.UI.SEARCH_BOX_ID} input`);
+      if (input && input.value.trim()) {
+        // If there's a search query, re-run the search
+        const results = await performSearch(input.value.toLowerCase());
+        const bookmarkList = document.querySelector(`#${CONFIG.UI.SEARCH_BOX_ID} ul:first-child`);
+        const tabList = document.querySelector(`#${CONFIG.UI.SEARCH_BOX_ID} ul:last-child`);
+        if (bookmarkList && tabList) {
+          updateSearchResults(results, bookmarkList, tabList);
+        }
+      } else {
+        // If no search, refresh bookmarks display
+        const bookmarkTreeNodes = await chrome.bookmarks.getTree();
+        const bookmarkList = document.querySelector(`#${CONFIG.UI.SEARCH_BOX_ID} ul:first-child`);
+        if (bookmarkList) {
+          displayBookmarks(bookmarkTreeNodes, bookmarkList);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error deleting bookmark:', error);
+    showBookmarkMessage('删除书签失败', 'error');
+  }
+}
+
+function showBookmarkMessage(message, type = 'success') {
+  const messageElement = document.createElement('div');
+  messageElement.style.position = 'fixed';
+  messageElement.style.top = '20px';
+  messageElement.style.right = '20px';
+  messageElement.style.padding = '12px 20px';
+  messageElement.style.borderRadius = '8px';
+  messageElement.style.color = 'white';
+  messageElement.style.fontWeight = '600';
+  messageElement.style.fontSize = '14px';
+  messageElement.style.zIndex = '10002';
+  messageElement.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+  messageElement.style.animation = 'slideInRight 0.3s ease-out';
+  
+  if (type === 'success') {
+    messageElement.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+    messageElement.textContent = `✅ ${message}`;
+  } else {
+    messageElement.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+    messageElement.textContent = `❌ ${message}`;
+  }
+  
+  document.body.appendChild(messageElement);
+  
+  setTimeout(() => {
+    messageElement.style.animation = 'slideOutRight 0.3s ease-in';
+    setTimeout(() => {
+      messageElement.remove();
+    }, 300);
+  }, 2000);
 }
 
 function handleTabDelete(tabId) {
@@ -605,8 +878,8 @@ function createBookmarkListItem(node, isSearchResult, level) {
     const folderElements = createBookmarkFolder(node, level);
     folderElements.forEach(element => listItem.appendChild(element));
   } else {
-    const link = createBookmarkLink(node);
-    listItem.appendChild(link);
+    const bookmarkContainer = createBookmarkContainer(node);
+    listItem.appendChild(bookmarkContainer);
   }
 
   return listItem;
@@ -647,6 +920,61 @@ function createBookmarkFolder(node, level) {
   return [folderTitle, subList];
 }
 
+function createBookmarkContainer(node) {
+  const container = document.createElement('div');
+  container.style.display = 'flex';
+  container.style.alignItems = 'center';
+  container.style.gap = '4px';
+
+  const deleteButton = createBookmarkDeleteButton((event) => {
+    event.stopPropagation();
+    handleBookmarkDelete(node.id);
+  });
+
+  const link = createBookmarkLink(node);
+
+  container.appendChild(deleteButton);
+  container.appendChild(link);
+  return container;
+}
+
+function createBookmarkDeleteButton(onClickHandler) {
+  const button = document.createElement('button');
+  button.textContent = CONFIG.DEFAULT_ICONS.DELETE;
+  button.title = '删除书签';
+  
+  // Apply styles directly
+  button.style.all = 'unset';
+  button.style.cursor = 'pointer';
+  button.style.display = 'flex';
+  button.style.alignItems = 'center';
+  button.style.justifyContent = 'center';
+  button.style.width = '16px';
+  button.style.height = '16px';
+  button.style.borderRadius = '50%';
+  button.style.backgroundColor = '#f0f0f0';
+  button.style.color = '#666';
+  button.style.fontSize = '10px';
+  button.style.transition = 'all 0.2s';
+  button.style.marginRight = '4px';
+  
+  button.onmouseover = () => {
+    button.style.backgroundColor = '#ef4444';
+    button.style.color = 'white';
+  };
+  
+  button.onmouseout = () => {
+    button.style.backgroundColor = '#f0f0f0';
+    button.style.color = '#666';
+  };
+  
+  if (onClickHandler) {
+    button.addEventListener('click', onClickHandler);
+  }
+  
+  return button;
+}
+
 function createBookmarkLink(node) {
   const link = document.createElement('a');
   link.href = node.url;
@@ -657,6 +985,7 @@ function createBookmarkLink(node) {
   link.style.color = 'black';
   link.style.textDecoration = 'none';
   link.style.borderBottom = '1px solid #ddd';
+  link.style.flex = '1';
 
   const icon = createFaviconElement(node.url, CONFIG.DEFAULT_ICONS.BOOKMARK);
   link.prepend(icon);

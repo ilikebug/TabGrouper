@@ -4,13 +4,7 @@ console.log('TabGrouper background script loading...');
 // Configuration constants
 const CONFIG = {
   UI: {
-    SEARCH_BOX_ID: 'tab-grouper',
-    MIN_WIDTH: 600,
-    MIN_HEIGHT: 400,
-    WIDTH_PERCENTAGE: 40,
-    HEIGHT_PERCENTAGE: 50,
-    INPUT_FOCUS_DELAY: 0,
-    MESSAGE_HIDE_DELAY: 2000
+    SEARCH_BOX_ID: 'tab-grouper'
   },
   
   ICONS: [
@@ -269,11 +263,11 @@ async function checkInactiveTabGroups() {
       for (const tab of groupTabs) {
         let lastActivity = tabActivity[tab.id];
         
-        // 如果没有时间记录，在当次检查时设置当前时间，下次检查就能收起了
+        // If there's no time record, set current time on this check, can collapse next time
         if (!lastActivity) {
           lastActivity = now;
           try {
-            await updateTabActivity(tab.id, now); // 记录当前时间
+            await updateTabActivity(tab.id, now); // Record current time
           } catch (error) {
             console.warn(`⚠️ Failed to update activity for tab ${tab.id}, using current time as fallback`);
             // Continue with current time as fallback
@@ -282,7 +276,7 @@ async function checkInactiveTabGroups() {
         
         const timeSinceActivity = now - lastActivity;
         
-        // 如果任何一个标签页在超时时间内活跃过，就不收起整个组
+        // If any tab was active within timeout period, don't collapse the entire group
         if (timeSinceActivity <= timeoutMs) {
           allTabsInactive = false;
           console.log(`⏰ Tab ${tab.id} in group ${groupId} is still active (${Math.round(timeSinceActivity / 60000)} min ago)`);
@@ -650,14 +644,18 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     console.log('🚀 alltabs:', alltabs?.length || 0);
     
     // All configuration and utilities must be defined within this function
+  function getFaviconUrl(url) {
+    try {
+      const urlObj = new URL(url);
+      return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=16`;
+    } catch (e) {
+      return '';
+    }
+  }
+
   const CONFIG = {
     UI: {
-      SEARCH_BOX_ID: 'tab-grouper',
-      MIN_WIDTH: 600,
-      MIN_HEIGHT: 400,
-      WIDTH_PERCENTAGE: 40,
-      HEIGHT_PERCENTAGE: 50,
-      INPUT_FOCUS_DELAY: 0
+      SEARCH_BOX_ID: 'tab-grouper'
     },
     ICONS: [
       "🌟", "🚀", "📚", "🎨", "🎵", "📷", "💼", "🔧", "🔍", "🍀",
@@ -678,6 +676,543 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     SEARCH: 'search',
     OPEN_QUICK_ACCESS_TAB: 'openQuickAccessTab'
   };
+
+  // Bookmark dialog functionality
+
+  function showBookmarkDialogForTab(tab) {
+    try {
+      createBookmarkDialog(tab);
+    } catch (error) {
+      console.error('Error showing bookmark dialog for tab:', error);
+    }
+  }
+
+  function createBookmarkDialog(currentTab) {
+    // Remove existing dialog if any
+    const existing = document.getElementById('bookmark-dialog-overlay');
+    if (existing) {
+      existing.remove();
+    }
+
+    const dialogOverlay = document.createElement('div');
+    dialogOverlay.id = 'bookmark-dialog-overlay';
+    dialogOverlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(8px);
+      z-index: 100001;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    `;
+
+    const dialog = document.createElement('div');
+    dialog.style.cssText = `
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(20px);
+      border-radius: 20px;
+      padding: 0;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(255, 255, 255, 0.5);
+      width: 520px;
+      max-width: 90vw;
+      max-height: 90vh;
+      overflow: hidden;
+      transform: scale(0.9) translateY(20px);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+    `;
+
+    dialog.innerHTML = `
+      <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 24px; display: flex; align-items: center; justify-content: space-between;">
+        <h3 style="margin: 0; font-size: 18px; font-weight: 600;">💾 Save Bookmark</h3>
+        <button id="close-bookmark-dialog" style="background: none; border: none; color: white; font-size: 18px; cursor: pointer; padding: 4px; border-radius: 6px; transition: background-color 0.2s;">✕</button>
+      </div>
+      
+      <div style="padding: 24px;">
+        <div style="margin-bottom: 20px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151; font-size: 14px;">📝 Bookmark Name</label>
+          <input type="text" id="bookmark-title" value="${currentTab.title || ''}" placeholder="Enter bookmark name" style="width: 100%; padding: 12px 16px; border: 2px solid transparent; border-radius: 12px; background: rgba(248, 250, 252, 0.8); font-size: 14px; font-weight: 500; color: #1e293b; box-sizing: border-box; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);">
+        </div>
+        
+        <div style="margin-bottom: 20px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151; font-size: 14px;">🔗 Web Address</label>
+          <input type="text" value="${currentTab.url || ''}" readonly style="width: 100%; padding: 12px 16px; border: 2px solid transparent; border-radius: 12px; background: rgba(241, 245, 249, 0.6); font-size: 14px; font-weight: 500; color: #64748b; box-sizing: border-box; cursor: default;">
+        </div>
+        
+        <div>
+          <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151; font-size: 14px;">📁 Select Folder</label>
+          <div style="border: 2px solid rgba(226, 232, 240, 0.6); border-radius: 12px; overflow: hidden; background: rgba(248, 250, 252, 0.8);">
+            <div id="folder-tree" style="max-height: 200px; overflow-y: auto; padding: 12px 0;">
+              <div style="padding: 20px; text-align: center; color: #6b7280; font-size: 14px;">Loading folders...</div>
+            </div>
+            <button id="new-folder-btn" style="width: 100%; padding: 12px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; font-weight: 600; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); border-top: 1px solid rgba(226, 232, 240, 0.6);">
+              <span>+</span>
+              <span>New Folder</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      <div style="padding: 20px 24px; background: rgba(248, 250, 252, 0.6); display: flex; gap: 12px; justify-content: flex-end;">
+        <button id="cancel-bookmark" style="padding: 12px 24px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); background: rgba(255, 255, 255, 0.8); color: #6b7280; border: 1px solid rgba(209, 213, 219, 0.6);">Cancel</button>
+        <button id="save-bookmark" style="padding: 12px 24px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25); display: flex; align-items: center; gap: 6px;">
+          <span>⭐</span>
+          <span>Save Bookmark</span>
+        </button>
+      </div>
+    `;
+
+    dialogOverlay.appendChild(dialog);
+    document.body.appendChild(dialogOverlay);
+
+    // Show with animation
+    requestAnimationFrame(() => {
+      dialogOverlay.style.opacity = '1';
+      dialog.style.transform = 'scale(1) translateY(0)';
+    });
+
+    // Load folder tree
+    loadFolderTree(currentTab);
+
+    // Setup event listeners
+    setupBookmarkDialogEvents(dialogOverlay, currentTab);
+
+    // Focus on title input
+    setTimeout(() => {
+      const titleInput = document.getElementById('bookmark-title');
+      if (titleInput) {
+        titleInput.focus();
+        titleInput.select();
+      }
+    }, 100);
+  }
+
+  async function loadFolderTree(currentTab) {
+    try {
+      const folderTree = document.getElementById('folder-tree');
+      if (!folderTree) return;
+
+      // Use the bookmarkTreeNodes passed to tabGrouper function
+      const folders = extractFolders(bookmarkTreeNodes[0]);
+      
+      folderTree.innerHTML = '';
+      renderFolderTree(folders, folderTree);
+      
+      // Select bookmarks bar by default
+      const bookmarksBar = folderTree.querySelector('.folder-item[data-id="1"]');
+      if (bookmarksBar) {
+        selectFolder(bookmarksBar);
+      }
+    } catch (error) {
+      console.error('Error loading folder tree:', error);
+      const folderTree = document.getElementById('folder-tree');
+      if (folderTree) {
+        folderTree.innerHTML = '<div style="padding: 20px; text-align: center; color: #6b7280; font-size: 14px;">Loading failed</div>';
+      }
+    }
+  }
+
+  function extractFolders(node, level = 0, path = []) {
+    const folders = [];
+    
+    if (node.children) {
+      for (const child of node.children) {
+        if (child.children !== undefined) {
+          const folder = {
+            id: child.id,
+            title: child.title || (child.id === '1' ? 'Bookmarks Bar' : child.id === '2' ? 'Other Bookmarks' : 'Mobile Bookmarks'),
+            level: level,
+            path: [...path, child.title || 'Untitled']
+          };
+          folders.push(folder);
+          
+          const subfolders = extractFolders(child, level + 1, folder.path);
+          folders.push(...subfolders);
+        }
+      }
+    }
+    
+    return folders;
+  }
+
+  function renderFolderTree(folders, container) {
+    folders.forEach(folder => {
+      const folderItem = document.createElement('div');
+      folderItem.className = 'folder-item';
+      folderItem.dataset.id = folder.id;
+      folderItem.style.cssText = `
+        display: flex;
+        align-items: center;
+        padding: 8px 16px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+        font-size: 14px;
+        color: #374151;
+      `;
+      
+      folderItem.innerHTML = `
+        ${'<div style="width: 20px; flex-shrink: 0;"></div>'.repeat(folder.level)}
+        <span style="margin-right: 8px; font-size: 16px;">📁</span>
+        <span>${folder.title}</span>
+      `;
+      
+      folderItem.addEventListener('click', () => selectFolder(folderItem));
+      folderItem.addEventListener('mouseover', () => {
+        if (!folderItem.classList.contains('selected')) {
+          folderItem.style.background = 'rgba(99, 102, 241, 0.05)';
+        }
+      });
+      folderItem.addEventListener('mouseout', () => {
+        if (!folderItem.classList.contains('selected')) {
+          folderItem.style.background = '';
+        }
+      });
+      
+      container.appendChild(folderItem);
+    });
+  }
+
+  let selectedFolderId = null;
+
+  function selectFolder(folderElement) {
+    // Remove previous selection
+    document.querySelectorAll('.folder-item').forEach(item => {
+      item.classList.remove('selected');
+      item.style.background = '';
+      item.style.color = '#374151';
+      item.style.fontWeight = '';
+    });
+    
+    // Add selection to clicked folder
+    folderElement.classList.add('selected');
+    folderElement.style.background = 'rgba(99, 102, 241, 0.1)';
+    folderElement.style.color = '#6366f1';
+    folderElement.style.fontWeight = '600';
+    selectedFolderId = folderElement.dataset.id;
+  }
+
+  function setupBookmarkDialogEvents(dialogOverlay, currentTab) {
+    const closeBtn = document.getElementById('close-bookmark-dialog');
+    const cancelBtn = document.getElementById('cancel-bookmark');
+    const saveBtn = document.getElementById('save-bookmark');
+    const newFolderBtn = document.getElementById('new-folder-btn');
+    const titleInput = document.getElementById('bookmark-title');
+
+    // Close dialog events
+    closeBtn?.addEventListener('click', () => hideBookmarkDialog(dialogOverlay));
+    cancelBtn?.addEventListener('click', () => hideBookmarkDialog(dialogOverlay));
+    
+    // Save bookmark
+    saveBtn?.addEventListener('click', () => saveBookmark(dialogOverlay, currentTab));
+    
+    // New folder
+    newFolderBtn?.addEventListener('click', () => showNewFolderDialog(currentTab));
+    
+    // Enter key support
+    titleInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        saveBookmark(dialogOverlay, currentTab);
+      }
+    });
+
+    // Escape key to close
+    dialogOverlay.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        hideBookmarkDialog(dialogOverlay);
+      }
+    });
+
+    // Click overlay to close
+    dialogOverlay.addEventListener('click', (e) => {
+      if (e.target === dialogOverlay) {
+        hideBookmarkDialog(dialogOverlay);
+      }
+    });
+  }
+
+  async function saveBookmark(dialogOverlay, currentTab) {
+    try {
+      const titleInput = document.getElementById('bookmark-title');
+      const title = titleInput?.value.trim() || currentTab?.title || 'Untitled';
+      const url = currentTab?.url;
+      const parentId = selectedFolderId || '1';
+
+      if (!url) {
+        showMessage('Unable to get page address', 'error');
+        return;
+      }
+
+      // Use message passing to save bookmark (background script will handle duplication check)
+      chrome.runtime.sendMessage({
+        action: 'createBookmark',
+        parentId: parentId,
+        title: title,
+        url: url
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Runtime error:', chrome.runtime.lastError);
+          showMessage('Failed to save bookmark', 'error');
+          return;
+        }
+        
+        if (response && response.success) {
+          hideBookmarkDialog(dialogOverlay);
+          showMessage('Bookmark saved successfully!', 'success');
+          
+          // Close current interface and refresh like bookmark deletion
+          if (searchBox._cleanup) searchBox._cleanup();
+          searchBox.remove();
+          chrome.runtime.sendMessage({ action: ACTIONS.REFRESH_GROUPED_TABS });
+        } else {
+          showMessage(response?.error || 'Failed to save bookmark', 'error');
+        }
+      });
+      
+    } catch (error) {
+      console.error('Error saving bookmark:', error);
+      if (error.message.includes('duplicate')) {
+        showMessage('This page is already bookmarked', 'error');
+      } else {
+        showMessage('Failed to save bookmark', 'error');
+      }
+    }
+  }
+
+  function hideBookmarkDialog(dialogOverlay) {
+    const dialog = dialogOverlay.querySelector('div');
+    dialogOverlay.style.opacity = '0';
+    if (dialog) {
+      dialog.style.transform = 'scale(0.9) translateY(20px)';
+    }
+    
+    setTimeout(() => {
+      dialogOverlay?.remove();
+      selectedFolderId = null;
+    }, 300);
+  }
+
+  function showNewFolderDialog(currentTab) {
+    const parentFolderName = getSelectedFolderName();
+    
+    // Remove existing folder dialog if any
+    const existing = document.getElementById('folder-dialog-overlay');
+    if (existing) {
+      existing.remove();
+    }
+
+    const folderDialogOverlay = document.createElement('div');
+    folderDialogOverlay.id = 'folder-dialog-overlay';
+    folderDialogOverlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(8px);
+      z-index: 100002;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    `;
+
+    const folderDialog = document.createElement('div');
+    folderDialog.style.cssText = `
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(20px);
+      border-radius: 20px;
+      padding: 0;
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.5);
+      width: 420px;
+      max-width: 90vw;
+      overflow: hidden;
+      transform: scale(0.9) translateY(20px);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+    `;
+
+    folderDialog.innerHTML = `
+      <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 20px 24px; display: flex; align-items: center; justify-content: space-between;">
+        <h3 style="margin: 0; font-size: 16px; font-weight: 600;">📁 New Folder</h3>
+        <button id="close-folder-dialog" style="background: none; border: none; color: white; font-size: 18px; cursor: pointer; padding: 4px; border-radius: 6px; transition: background-color 0.2s;">✕</button>
+      </div>
+      
+      <div style="padding: 24px;">
+        <div style="margin-bottom: 20px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151; font-size: 14px;">📝 Folder Name</label>
+          <input type="text" id="folder-name" placeholder="Enter folder name" autocomplete="off" style="width: 100%; padding: 12px 16px; border: 2px solid transparent; border-radius: 12px; background: rgba(248, 250, 252, 0.8); font-size: 14px; font-weight: 500; color: #1e293b; box-sizing: border-box; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);">
+        </div>
+        
+        <div>
+          <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151; font-size: 14px;">📂 Create Location</label>
+          <div style="background: rgba(99, 102, 241, 0.1); color: #6366f1; padding: 12px 16px; border-radius: 10px; font-size: 14px; font-weight: 500; border: 1px solid rgba(99, 102, 241, 0.2);">
+            Create under "${parentFolderName}"
+          </div>
+        </div>
+      </div>
+      
+      <div style="padding: 20px 24px; background: rgba(248, 250, 252, 0.6); display: flex; gap: 12px; justify-content: flex-end;">
+        <button id="cancel-folder" style="padding: 12px 24px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); background: rgba(255, 255, 255, 0.8); color: #6b7280; border: 1px solid rgba(209, 213, 219, 0.6);">Cancel</button>
+        <button id="create-folder" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; padding: 12px 24px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);">
+          <span>+</span>
+          <span>Create</span>
+        </button>
+      </div>
+    `;
+
+    folderDialogOverlay.appendChild(folderDialog);
+    document.body.appendChild(folderDialogOverlay);
+
+    // Show with animation
+    requestAnimationFrame(() => {
+      folderDialogOverlay.style.opacity = '1';
+      folderDialog.style.transform = 'scale(1) translateY(0)';
+    });
+
+    // Setup events
+    setupFolderDialogEvents(folderDialogOverlay, currentTab);
+
+    // Focus on folder name input
+    setTimeout(() => {
+      const folderNameInput = document.getElementById('folder-name');
+      if (folderNameInput) {
+        folderNameInput.focus();
+      }
+    }, 100);
+  }
+
+  function getSelectedFolderName() {
+    const selectedFolder = document.querySelector('.folder-item.selected span:last-child');
+    return selectedFolder?.textContent || 'Bookmarks Bar';
+  }
+
+  function setupFolderDialogEvents(folderDialogOverlay, currentTab) {
+    const closeBtn = document.getElementById('close-folder-dialog');
+    const cancelBtn = document.getElementById('cancel-folder');
+    const createBtn = document.getElementById('create-folder');
+    const folderNameInput = document.getElementById('folder-name');
+
+    // Close dialog events
+    closeBtn?.addEventListener('click', () => hideFolderDialog(folderDialogOverlay));
+    cancelBtn?.addEventListener('click', () => hideFolderDialog(folderDialogOverlay));
+    
+    // Create folder
+    createBtn?.addEventListener('click', () => createNewFolder(folderDialogOverlay, currentTab));
+    
+    // Enter key support
+    folderNameInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        createNewFolder(folderDialogOverlay, currentTab);
+      }
+    });
+
+    // Escape key to close
+    folderDialogOverlay.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        hideFolderDialog(folderDialogOverlay);
+      }
+    });
+
+    // Click overlay to close
+    folderDialogOverlay.addEventListener('click', (e) => {
+      if (e.target === folderDialogOverlay) {
+        hideFolderDialog(folderDialogOverlay);
+      }
+    });
+  }
+
+  function hideFolderDialog(folderDialogOverlay) {
+    const dialog = folderDialogOverlay.querySelector('div');
+    folderDialogOverlay.style.opacity = '0';
+    if (dialog) {
+      dialog.style.transform = 'scale(0.9) translateY(20px)';
+    }
+    
+    setTimeout(() => {
+      folderDialogOverlay?.remove();
+    }, 300);
+  }
+
+  async function createNewFolder(folderDialogOverlay, currentTab) {
+    try {
+      const folderNameInput = document.getElementById('folder-name');
+      const folderName = folderNameInput?.value.trim();
+      
+      if (!folderName) {
+        folderNameInput?.focus();
+        return;
+      }
+
+      const parentId = selectedFolderId || '1';
+      
+      const newFolder = await chrome.bookmarks.create({
+        parentId: parentId,
+        title: folderName
+      });
+
+      hideFolderDialog(folderDialogOverlay);
+      await loadFolderTree(currentTab);
+      
+      // Select the newly created folder
+      const newFolderElement = document.querySelector(`.folder-item[data-id="${newFolder.id}"]`);
+      if (newFolderElement) {
+        selectFolder(newFolderElement);
+        newFolderElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      
+    } catch (error) {
+      console.error('Error creating folder:', error);
+      showMessage('Failed to create folder', 'error');
+    }
+  }
+
+  function showMessage(message, type = 'success') {
+    const messageElement = document.createElement('div');
+    messageElement.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 12px 20px;
+      border-radius: 12px;
+      color: white;
+      font-weight: 600;
+      font-size: 14px;
+      z-index: 999999;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+      backdrop-filter: blur(8px);
+      transform: translateX(100%);
+      transition: transform 0.3s ease-out;
+    `;
+    
+    if (type === 'success') {
+      messageElement.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+      messageElement.textContent = `✅ ${message}`;
+    } else {
+      messageElement.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+      messageElement.textContent = `❌ ${message}`;
+    }
+    
+    document.body.appendChild(messageElement);
+    
+    requestAnimationFrame(() => {
+      messageElement.style.transform = 'translateX(0)';
+    });
+    
+    setTimeout(() => {
+      messageElement.style.transform = 'translateX(100%)';
+      setTimeout(() => {
+        messageElement.remove();
+      }, 300);
+    }, 2000);
+  }
 
   // Utility functions - must be defined inline
   function isValidUrl(string) {
@@ -712,6 +1247,32 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     return text.replace(regex, '<mark style="background: rgba(16, 185, 129, 0.3); padding: 1px 2px; border-radius: 2px; font-weight: 600;">$1</mark>');
   }
 
+
+
+
+
+  function getFaviconUrl(url) {
+    try {
+      const urlObj = new URL(url);
+      return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=16`;
+    } catch (error) {
+      return 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="%23ccc"/></svg>';
+    }
+  }
+
+  function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+      const later = () => {
+        clearTimeout(timeout);
+        func(...args);
+      };
+      clearTimeout(timeout);
+      timeout = setTimeout(later, wait);
+    };
+  }
+
+  // Helper functions for tab grouping
   async function getSupportedHosts() {
     try {
       const result = await chrome.storage.local.get(CONFIG.STORAGE_KEYS.SUPPORTED_HOSTS);
@@ -769,27 +1330,6 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     }
 
     return groupedTabs;
-  }
-
-  function getFaviconUrl(url) {
-    try {
-      const urlObj = new URL(url);
-      return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=16`;
-    } catch (error) {
-      return 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="%23ccc"/></svg>';
-    }
-  }
-
-  function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-      const later = () => {
-        clearTimeout(timeout);
-        func(...args);
-      };
-      clearTimeout(timeout);
-      timeout = setTimeout(later, wait);
-    };
   }
 
   // Recent tabs functions - internal to tabGrouper
@@ -981,7 +1521,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       
       .header {
         display: flex;
-        align-items: center;
+        flex-direction: column;
         margin-bottom: 20px;
         padding-bottom: 16px;
         border-bottom: 1px solid rgba(226, 232, 240, 0.6);
@@ -1421,7 +1961,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         opacity: 0.6;
       }
       
-      /* 键盘导航选中样式 */
+      /* Keyboard navigation selection style */
       .keyboard-selected {
         background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%) !important;
         border: 2px solid rgba(99, 102, 241, 0.4) !important;
@@ -1430,7 +1970,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2) !important;
       }
       
-      /* 活跃区域样式 */
+      /* Active area style */
       .section-active {
         background: rgba(99, 102, 241, 0.05) !important;
         border-radius: 12px !important;
@@ -1511,7 +2051,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
           updateSearchResults({ tabs, bookmarks }, bookmarkList, tabList);
           displaySidebarRecentTabs(recentTabsList, filteredRecentTabs, query);
           
-          // 重置键盘选中状态
+          // Reset keyboard selection state
           currentSection = 0;
           selectedIndex = -1;
           
@@ -1525,10 +2065,11 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       } else {
         const groupedTabs = await groupTabsByHost(alltabs);
         displayGroupedTabs(groupedTabs, tabList);
+        
         displayBookmarks(bookmarkTreeNodes[0]?.children || [], bookmarkList);
         displaySidebarRecentTabs(recentTabsList);
         
-        // 重置键盘选中状态
+        // Reset keyboard selection state
         currentSection = 0;
         selectedIndex = -1;
         
@@ -1553,6 +2094,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       
       debouncedSearch(value.toLowerCase());
     });
+
 
     // Create sidebar
     const sidebar = document.createElement('div');
@@ -1627,18 +2169,22 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     setTimeout(() => {
       input.focus();
       
-      // Prevent input blur to maintain focus
+      // Prevent input blur to maintain focus (but allow dialogs to take focus)
       input.addEventListener('blur', (e) => {
         e.stopPropagation();
         setTimeout(() => {
-          if (document.getElementById(CONFIG.UI.SEARCH_BOX_ID)) {
+          // Only refocus if no dialog is open
+          const hasDialog = document.getElementById('bookmark-dialog-overlay') || 
+                           document.getElementById('folder-dialog-overlay');
+          
+          if (document.getElementById(CONFIG.UI.SEARCH_BOX_ID) && !hasDialog) {
             input.focus();
           }
         }, 0);
       });
     }, 0);
 
-    // 当前选中的区域和索引
+    // Current selected area and index
     let currentSection = 0; // 0: bookmarks, 1: tabs, 2: sidebar
     let selectedIndex = -1;
     
@@ -1665,7 +2211,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     const updateSelection = (sectionIndex, itemIndex) => {
       const sections = getSections();
       
-      // 移除所有选中样式
+      // Remove all selection styles
       sections.forEach(section => {
         section.items.forEach(item => item.classList.remove('keyboard-selected'));
         section.container.classList.remove('section-active');
@@ -1682,10 +2228,10 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
           selectedItem.classList.add('keyboard-selected');
           selectedItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           
-          // 高亮当前活跃区域
+          // Highlight current active area
           section.container.classList.add('section-active');
         } else if (section.items.length > 0) {
-          // 如果索引越界但区域有项目，选择第一个或最后一个
+          // If index is out of bounds but area has items, select first or last
           const newIndex = itemIndex < 0 ? 0 : section.items.length - 1;
           updateSelection(sectionIndex, newIndex);
         }
@@ -1700,12 +2246,12 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       let newSection = currentSection;
       
       if (direction > 0) {
-        // Tab: 下一个区域
+        // Tab: Next area
         do {
           newSection = (newSection + 1) % sections.length;
         } while (sections[newSection].items.length === 0 && newSection !== currentSection);
       } else {
-        // Shift+Tab: 上一个区域
+        // Shift+Tab: Previous area
         do {
           newSection = newSection === 0 ? sections.length - 1 : newSection - 1;
         } while (sections[newSection].items.length === 0 && newSection !== currentSection);
@@ -1733,7 +2279,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       if (event.key === 'ArrowDown') {
         event.preventDefault();
         if (selectedIndex === -1) {
-          // 没有选中任何项目，选择第一个有内容的区域的第一个项目
+          // No item selected, select first item in first area with content
           for (let i = 0; i < sections.length; i++) {
             if (sections[i].items.length > 0) {
               updateSelection(i, 0);
@@ -1741,7 +2287,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
             }
           }
         } else {
-          // 在当前区域内向下导航
+          // Navigate down within current area
           const currentSectionItems = sections[currentSection].items;
           const newIndex = selectedIndex < currentSectionItems.length - 1 ? selectedIndex + 1 : 0;
           updateSelection(currentSection, newIndex);
@@ -1752,7 +2298,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       if (event.key === 'ArrowUp') {
         event.preventDefault();
         if (selectedIndex === -1) {
-          // 没有选中任何项目，选择第一个有内容的区域的最后一个项目
+          // No item selected, select last item in first area with content
           for (let i = 0; i < sections.length; i++) {
             if (sections[i].items.length > 0) {
               updateSelection(i, sections[i].items.length - 1);
@@ -1760,7 +2306,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
             }
           }
         } else {
-          // 在当前区域内向上导航
+          // Navigate up within current area
           const currentSectionItems = sections[currentSection].items;
           const newIndex = selectedIndex > 0 ? selectedIndex - 1 : currentSectionItems.length - 1;
           updateSelection(currentSection, newIndex);
@@ -1939,9 +2485,82 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
           const tabItem = document.createElement('div');
           tabItem.className = 'tab-item';
 
+          // Create actions container for bookmark and delete buttons
+          const actionsContainer = document.createElement('div');
+          actionsContainer.style.cssText = `
+            display: flex;
+            gap: 4px;
+            margin-left: 8px;
+            margin-right: 4px;
+          `;
+
+          // Create bookmark button
+          const bookmarkButton = document.createElement('button');
+          bookmarkButton.textContent = '⭐';
+          bookmarkButton.title = 'Bookmark this page';
+          bookmarkButton.style.cssText = `
+            all: unset;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: rgba(248, 250, 252, 0.8);
+            color: #6b7280;
+            font-size: 12px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid rgba(226, 232, 240, 0.6);
+          `;
+
+          bookmarkButton.addEventListener('mouseover', () => {
+            bookmarkButton.style.backgroundColor = '#fbbf24';
+            bookmarkButton.style.color = 'white';
+            bookmarkButton.style.transform = 'scale(1.1)';
+          });
+
+          bookmarkButton.addEventListener('mouseout', () => {
+            bookmarkButton.style.backgroundColor = 'rgba(248, 250, 252, 0.8)';
+            bookmarkButton.style.color = '#6b7280';
+            bookmarkButton.style.transform = 'scale(1)';
+          });
+
+          bookmarkButton.addEventListener('click', (event) => {
+            event.stopPropagation();
+            showBookmarkDialogForTab(tab);
+          });
+
           const deleteButton = document.createElement('button');
           deleteButton.className = 'tab-delete';
           deleteButton.textContent = CONFIG.DEFAULT_ICONS.DELETE;
+          deleteButton.title = 'Close tab';
+          deleteButton.style.cssText = `
+            all: unset;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: rgba(248, 250, 252, 0.8);
+            color: #6b7280;
+            font-size: 12px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid rgba(226, 232, 240, 0.6);
+          `;
+
+          deleteButton.addEventListener('mouseover', () => {
+            deleteButton.style.backgroundColor = '#ef4444';
+            deleteButton.style.color = 'white';
+          });
+
+          deleteButton.addEventListener('mouseout', () => {
+            deleteButton.style.backgroundColor = 'rgba(248, 250, 252, 0.8)';
+            deleteButton.style.color = '#6b7280';
+          });
+
           deleteButton.addEventListener('click', (event) => {
             event.stopPropagation();
             chrome.runtime.sendMessage({ action: ACTIONS.REMOVE_TAB, tabId: tab.id }, () => {
@@ -1950,6 +2569,9 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
               chrome.runtime.sendMessage({ action: ACTIONS.REFRESH_GROUPED_TABS });
             });
           });
+
+          actionsContainer.appendChild(bookmarkButton);
+          actionsContainer.appendChild(deleteButton);
 
           const link = document.createElement('a');
           link.className = 'tab-link';
@@ -1979,7 +2601,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
             searchBox.remove();
           });
 
-          tabItem.appendChild(deleteButton);
+          tabItem.appendChild(actionsContainer);
           tabItem.appendChild(link);
           tabsContainer.appendChild(tabItem);
         });
@@ -2179,10 +2801,85 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
           }
           listItem.appendChild(bookmarkFolder);
         } else {
+          // Create container for bookmark item with delete button
+          const bookmarkContainer = document.createElement('div');
+          bookmarkContainer.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 4px;
+          `;
+
+          // Create delete button
+          const deleteButton = document.createElement('button');
+          deleteButton.textContent = CONFIG.DEFAULT_ICONS.DELETE;
+          deleteButton.title = 'Delete bookmark';
+          deleteButton.style.cssText = `
+            all: unset;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background-color: rgba(248, 250, 252, 0.8);
+            color: #6b7280;
+            font-size: 10px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid rgba(226, 232, 240, 0.6);
+            margin-right: 4px;
+          `;
+
+          deleteButton.addEventListener('mouseover', () => {
+            deleteButton.style.backgroundColor = '#ef4444';
+            deleteButton.style.color = 'white';
+          });
+
+          deleteButton.addEventListener('mouseout', () => {
+            deleteButton.style.backgroundColor = 'rgba(248, 250, 252, 0.8)';
+            deleteButton.style.color = '#6b7280';
+          });
+
+          deleteButton.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            
+            try {
+              // Send message to background script to delete bookmark
+              const response = await new Promise((resolve) => {
+                chrome.runtime.sendMessage({
+                  action: 'deleteBookmark',
+                  bookmarkId: node.id
+                }, resolve);
+              });
+              
+              if (chrome.runtime.lastError) {
+                console.error('Runtime error:', chrome.runtime.lastError);
+                showMessage('Failed to delete bookmark', 'error');
+                return;
+              }
+              
+              if (response && response.success) {
+                showMessage('Bookmark deleted successfully!', 'success');
+                
+                // Close current interface and refresh like tab deletion
+                if (searchBox._cleanup) searchBox._cleanup();
+                searchBox.remove();
+                chrome.runtime.sendMessage({ action: ACTIONS.REFRESH_GROUPED_TABS });
+              } else {
+                console.error('Error deleting bookmark:', response?.error || 'Unknown error');
+                showMessage('Failed to delete bookmark', 'error');
+              }
+            } catch (error) {
+              console.error('Error in delete bookmark operation:', error);
+              showMessage('Failed to delete bookmark', 'error');
+            }
+          });
+
           const link = document.createElement('a');
           link.className = 'bookmark-link';
           link.href = node.url;
           link.textContent = node.title || 'Untitled Bookmark';
+          link.style.flex = '1';
 
           const icon = document.createElement('img');
           icon.className = 'favicon';
@@ -2190,11 +2887,14 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
           icon.onerror = () => {
             icon.style.display = 'none';
             const fallback = document.createElement('span');
-            fallback.textContent = CONFIG.DEFAULT_ICONS.BOOKMARK;
+            fallback.textContent = CONFIG.DEFAULT_ICONS.SEARCH;
             fallback.style.marginRight = '8px';
             link.prepend(fallback);
           };
           link.prepend(icon);
+
+          bookmarkContainer.appendChild(deleteButton);
+          bookmarkContainer.appendChild(link);
 
           link.addEventListener('click', (event) => {
             event.preventDefault();
@@ -2203,7 +2903,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
             searchBox.remove();
           });
 
-          listItem.appendChild(link);
+          listItem.appendChild(bookmarkContainer);
         }
         parentElement.appendChild(listItem);
       });
@@ -2394,6 +3094,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     [ACTIONS.OPEN_QUICK_ACCESS_TAB]: handleOpenQuickAccessTab,
     [ACTIONS.GET_AUTO_COLLAPSE_SETTINGS]: handleGetAutoCollapseSettings,
     [ACTIONS.UPDATE_AUTO_COLLAPSE_SETTINGS]: handleUpdateAutoCollapseSettings,
+    'deleteBookmark': handleDeleteBookmark,
+    'createBookmark': handleCreateBookmark,
     'ping': handlePing
   };
 
@@ -2532,6 +3234,47 @@ async function handleRemoveTab(request, sender, sendResponse) {
   return true;
 }
 
+function handleDeleteBookmark(request, sender, sendResponse) {
+  (async () => {
+    try {
+      await chrome.bookmarks.remove(request.bookmarkId);
+      console.log(`✅ Bookmark ${request.bookmarkId} deleted successfully`);
+      sendResponse({ success: true });
+    } catch (error) {
+      console.error('Error deleting bookmark:', error);
+      sendResponse({ success: false, error: error.message });
+    }
+  })();
+  return true; // Keep message channel open for async response
+}
+
+function handleCreateBookmark(request, sender, sendResponse) {
+  (async () => {
+    try {
+      // Check if bookmark already exists
+      const existingBookmarks = await chrome.bookmarks.search({ url: request.url });
+      if (existingBookmarks.length > 0) {
+        sendResponse({ success: false, error: 'This page is already bookmarked' });
+        return;
+      }
+
+      // Create the bookmark
+      const bookmark = await chrome.bookmarks.create({
+        parentId: request.parentId,
+        title: request.title,
+        url: request.url
+      });
+
+      console.log(`✅ Bookmark created successfully:`, bookmark);
+      sendResponse({ success: true, bookmark: bookmark });
+    } catch (error) {
+      console.error('Error creating bookmark:', error);
+      sendResponse({ success: false, error: error.message });
+    }
+  })();
+  return true; // Keep message channel open for async response
+}
+
 function handleRefreshGroupedTabs(request, sender, sendResponse) {
   (async () => {
     try {
@@ -2668,7 +3411,7 @@ chrome.runtime.onStartup.addListener(async () => {
   }
 });
 
-// Tab创建时记录时间
+// Record time when tab is created
 chrome.tabs.onCreated.addListener(async (tab) => {
   try {
     await updateTabActivity(tab.id);
@@ -2776,21 +3519,6 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   }
 });
 
-// Function to manually track current active tab (for testing)
-async function trackCurrentTab() {
-  try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tabs.length > 0) {
-      console.log('Manually tracking current tab:', tabs[0].title, tabs[0].url);
-      await trackRecentTab(tabs[0]);
-    }
-  } catch (error) {
-    console.error('Error manually tracking tab:', error);
-  }
-}
-
-// Make function available globally for testing
-globalThis.trackCurrentTab = trackCurrentTab;
 
 
 console.log('TabGrouper background script loaded successfully');
