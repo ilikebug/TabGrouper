@@ -962,13 +962,18 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         }
         
         if (response && response.success) {
-          hideBookmarkDialog(dialogOverlay);
           showMessage('Bookmark saved successfully!', 'success');
           
           // Close current interface and refresh like bookmark deletion
-          if (searchBox._cleanup) searchBox._cleanup();
-          searchBox.remove();
+          const searchBox = document.getElementById(CONFIG.UI.SEARCH_BOX_ID);
+          if (searchBox) {
+            if (searchBox._cleanup) searchBox._cleanup();
+            searchBox.remove();
+          }
           chrome.runtime.sendMessage({ action: ACTIONS.REFRESH_GROUPED_TABS });
+          
+          // Hide dialog after refresh to avoid timing issues
+          hideBookmarkDialog(dialogOverlay);
         } else {
           showMessage(response?.error || 'Failed to save bookmark', 'error');
         }
