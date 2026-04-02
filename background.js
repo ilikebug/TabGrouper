@@ -3088,27 +3088,33 @@ async function handleActivateTab(request, sender, sendResponse) {
   }
 }
 
-// Track processed clicks to prevent duplicates
-const processedClicks = new Set();
+async function isClickDuplicate(clickId) {
+  try {
+    const result = await chrome.storage.session.get('processedClicks');
+    const clicks = result.processedClicks || {};
+    const now = Date.now();
+    for (const [id, ts] of Object.entries(clicks)) {
+      if (now - ts > 5000) delete clicks[id];
+    }
+    if (clicks[clickId]) {
+      await chrome.storage.session.set({ processedClicks: clicks });
+      return true;
+    }
+    clicks[clickId] = now;
+    await chrome.storage.session.set({ processedClicks: clicks });
+    return false;
+  } catch (error) {
+    console.error('Error checking click dedup:', error);
+    return false;
+  }
+}
 
 async function handleOpenQuickAccessTab(request, sender, sendResponse) {
   const normalizeUrl = (url) => url ? url.replace(/\/$/, '').toLowerCase() : '';
 
-  // Check if this click has already been processed
-  if (request.clickId && processedClicks.has(request.clickId)) {
-    if (sendResponse) {
-      sendResponse({ success: false, error: 'Duplicate click' });
-    }
+  if (request.clickId && await isClickDuplicate(request.clickId)) {
+    if (sendResponse) sendResponse({ success: false, error: 'Duplicate click' });
     return true;
-  }
-
-  // Mark this click as processed
-  if (request.clickId) {
-    processedClicks.add(request.clickId);
-    // Clean up after 5 seconds to prevent memory leak
-    setTimeout(() => {
-      processedClicks.delete(request.clickId);
-    }, 5000);
   }
 
   try {
@@ -3132,26 +3138,6 @@ async function handleOpenQuickAccessTab(request, sender, sendResponse) {
         'create new tab'
       );
       
-      // Add a small delay and check if Chrome created any additional tabs
-      setTimeout(async () => {
-        try {
-          const allTabsAfter = await chrome.tabs.query({});
-          const duplicateTabs = allTabsAfter.filter(tab => {
-            return normalizeUrl(tab.url) === normalizeUrl(request.url) && tab.id !== newTab.id;
-          });
-          
-          if (duplicateTabs.length > 0) {
-            for (const dupTab of duplicateTabs) {
-              await safeTabOperation(
-                () => chrome.tabs.remove(dupTab.id),
-                'remove duplicate tab'
-              );
-            }
-          }
-        } catch (error) {
-          console.error('Error checking for duplicate tabs:', error);
-        }
-      }, 1000); // 1 second delay
     }
     
     if (sendResponse) {
