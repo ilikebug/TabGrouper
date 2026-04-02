@@ -344,13 +344,17 @@ async function ensureAutoCollapseActive() {
 }
 
 // Utility functions
+let supportedHostsCache = null;
 async function getSupportedHosts() {
+  if (supportedHostsCache !== null) return supportedHostsCache;
   try {
     const result = await chrome.storage.local.get(CONFIG.STORAGE_KEYS.SUPPORTED_HOSTS);
-    return result[CONFIG.STORAGE_KEYS.SUPPORTED_HOSTS] || {};
+    supportedHostsCache = result[CONFIG.STORAGE_KEYS.SUPPORTED_HOSTS] || {};
+    return supportedHostsCache;
   } catch (error) {
     console.error('Error getting supported hosts:', error);
-    return {};
+    supportedHostsCache = {};
+    return supportedHostsCache;
   }
 }
 
