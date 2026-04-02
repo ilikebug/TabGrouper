@@ -3304,7 +3304,7 @@ function handleUpdateAutoCollapseSettings(request, sender, sendResponse) {
       if (validatedSettings.enabled) {
         await startAutoCollapseChecker();
       } else {
-        stopAutoCollapseChecker();
+        await stopAutoCollapseChecker();
       }
       
       const response = { success: true, settings: validatedSettings };
