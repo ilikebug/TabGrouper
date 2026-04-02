@@ -66,11 +66,12 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
 });
 
-// Invalidate supportedHostsCache when hosts are updated from the popup
+// Invalidate in-memory caches when storage is updated externally
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes[CONFIG.STORAGE_KEYS.SUPPORTED_HOSTS]) {
-    supportedHostsCache = null;
-  }
+  if (area !== 'local') return;
+  if (changes[CONFIG.STORAGE_KEYS.SUPPORTED_HOSTS]) supportedHostsCache = null;
+  if (changes[CONFIG.STORAGE_KEYS.TAB_ACTIVITY]) tabActivityCache = null;
+  if (changes[CONFIG.STORAGE_KEYS.RECENT_TABS]) recentTabsCache = null;
 });
 
 async function getAutoCollapseSettings() {
