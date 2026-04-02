@@ -135,35 +135,12 @@ async function checkInactiveTabGroups() {
       return;
     }
 
-    
-    // Try to get all required data with error handling
-    let tabActivity, tabs, activeTab;
-    
-    try {
-      [tabActivity, tabs, activeTab] = await Promise.all([
-        getTabActivity(),
-        getAllTabs(),
-        getActiveTab()
-      ]);
-    } catch (error) {
-      console.error('❌ Failed to get required data for check:', error);
-      
-      // If Service Worker is dead, try to get basic data and continue with limited functionality
-      if (error.message?.includes('No SW')) {
-        console.warn('🔄 Service Worker unavailable, trying basic functionality...');
-        try {
-          tabs = await getAllTabs();
-          activeTab = await getActiveTab();
-          tabActivity = {}; // Use empty activity data as fallback
-          console.log('⚠️ Continuing with empty activity data');
-        } catch (fallbackError) {
-          console.error('❌ Even basic functionality failed, aborting check');
-          return;
-        }
-      } else {
-        throw error; // Re-throw non-SW errors
-      }
-    }
+
+    const [tabActivity, tabs, activeTab] = await Promise.all([
+      getTabActivity(),
+      getAllTabs(),
+      getActiveTab()
+    ]);
     
     const now = Date.now();
     const timeoutMs = settings.timeoutMinutes * 60 * 1000;
