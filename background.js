@@ -3096,7 +3096,8 @@ async function handleActivateTab(request, sender, sendResponse) {
 const processedClicks = new Set();
 
 async function handleOpenQuickAccessTab(request, sender, sendResponse) {
-  
+  const normalizeUrl = (url) => url ? url.replace(/\/$/, '').toLowerCase() : '';
+
   // Check if this click has already been processed
   if (request.clickId && processedClicks.has(request.clickId)) {
     if (sendResponse) {
@@ -3104,7 +3105,7 @@ async function handleOpenQuickAccessTab(request, sender, sendResponse) {
     }
     return true;
   }
-  
+
   // Mark this click as processed
   if (request.clickId) {
     processedClicks.add(request.clickId);
@@ -3113,16 +3114,12 @@ async function handleOpenQuickAccessTab(request, sender, sendResponse) {
       processedClicks.delete(request.clickId);
     }, 5000);
   }
-  
+
   try {
     // Try to activate existing tab first - use broader search
     const allTabs = await chrome.tabs.query({});
     const matchingTabs = allTabs.filter(tab => {
       // Normalize URLs for comparison
-      const normalizeUrl = (url) => {
-        if (!url) return '';
-        return url.replace(/\/$/, '').toLowerCase(); // Remove trailing slash and lowercase
-      };
       return normalizeUrl(tab.url) === normalizeUrl(request.url);
     });
     
@@ -3144,10 +3141,6 @@ async function handleOpenQuickAccessTab(request, sender, sendResponse) {
         try {
           const allTabsAfter = await chrome.tabs.query({});
           const duplicateTabs = allTabsAfter.filter(tab => {
-            const normalizeUrl = (url) => {
-              if (!url) return '';
-              return url.replace(/\/$/, '').toLowerCase();
-            };
             return normalizeUrl(tab.url) === normalizeUrl(request.url) && tab.id !== newTab.id;
           });
           
