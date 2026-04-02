@@ -3059,9 +3059,6 @@ chrome.commands.onCommand.addListener(async (command) => {
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  // Ensure auto-collapse is active whenever the service worker handles a message
-  ensureAutoCollapseActive();
-  
   const messageHandlers = {
     [ACTIONS.ACTIVATE_TAB]: handleActivateTab,
     [ACTIONS.REMOVE_TAB]: handleRemoveTab,
