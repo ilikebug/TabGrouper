@@ -3346,13 +3346,8 @@ async function syncAllTabGroupsWithTitles() {
     }
 
     try {
-      chrome.tabs.group({ tabIds }, (groupId) => {
-        if (chrome.runtime.lastError) {
-          console.warn('Failed to create/update group:', chrome.runtime.lastError);
-          return;
-        }
-        chrome.tabGroups.update(groupId, { title: host });
-      });
+      const groupId = await chrome.tabs.group({ tabIds });
+      await chrome.tabGroups.update(groupId, { title: host });
     } catch (error) {
       console.warn(`Failed to sync group title for host "${host}":`, error);
     }
@@ -3421,19 +3416,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     const existingGroup = groups.find(group => group.title === host);
 
     if (existingGroup) {
-      chrome.tabs.group({
-        tabIds: [tabId],
-        groupId: existingGroup.id
-      });
+      await chrome.tabs.group({ tabIds: [tabId], groupId: existingGroup.id });
     } else {
-      chrome.tabs.group({ tabIds: [tabId] }, (groupId) => {
-        if (chrome.runtime.lastError) {
-          console.warn('Failed to create new group:', chrome.runtime.lastError);
-          return;
-        }
-        
-        chrome.tabGroups.update(groupId, { title: host });
-      });
+      const groupId = await chrome.tabs.group({ tabIds: [tabId] });
+      await chrome.tabGroups.update(groupId, { title: host });
     }
   } catch (error) {
     console.error('Tab update error:', error);
