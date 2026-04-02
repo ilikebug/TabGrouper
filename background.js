@@ -3222,67 +3222,58 @@ async function handleRemoveTab(request, sender, sendResponse) {
   return true;
 }
 
-function handleDeleteBookmark(request, sender, sendResponse) {
-  (async () => {
-    try {
-      await chrome.bookmarks.remove(request.bookmarkId);
-      console.log(`✅ Bookmark ${request.bookmarkId} deleted successfully`);
-      sendResponse({ success: true });
-    } catch (error) {
-      console.error('Error deleting bookmark:', error);
-      sendResponse({ success: false, error: error.message });
-    }
-  })();
-  return true; // Keep message channel open for async response
+async function handleDeleteBookmark(request, sender, sendResponse) {
+  try {
+    await chrome.bookmarks.remove(request.bookmarkId);
+    console.log(`✅ Bookmark ${request.bookmarkId} deleted successfully`);
+    sendResponse({ success: true });
+  } catch (error) {
+    console.error('Error deleting bookmark:', error);
+    sendResponse({ success: false, error: error.message });
+  }
 }
 
-function handleCreateBookmark(request, sender, sendResponse) {
-  (async () => {
-    try {
-      // Check if bookmark already exists
-      const existingBookmarks = await chrome.bookmarks.search({ url: request.url });
-      if (existingBookmarks.length > 0) {
-        sendResponse({ success: false, error: 'This page is already bookmarked' });
-        return;
-      }
-
-      // Create the bookmark
-      const bookmark = await chrome.bookmarks.create({
-        parentId: request.parentId,
-        title: request.title,
-        url: request.url
-      });
-
-      console.log(`✅ Bookmark created successfully:`, bookmark);
-      sendResponse({ success: true, bookmark: bookmark });
-    } catch (error) {
-      console.error('Error creating bookmark:', error);
-      sendResponse({ success: false, error: error.message });
+async function handleCreateBookmark(request, sender, sendResponse) {
+  try {
+    // Check if bookmark already exists
+    const existingBookmarks = await chrome.bookmarks.search({ url: request.url });
+    if (existingBookmarks.length > 0) {
+      sendResponse({ success: false, error: 'This page is already bookmarked' });
+      return;
     }
-  })();
-  return true; // Keep message channel open for async response
+
+    // Create the bookmark
+    const bookmark = await chrome.bookmarks.create({
+      parentId: request.parentId,
+      title: request.title,
+      url: request.url
+    });
+
+    console.log(`✅ Bookmark created successfully:`, bookmark);
+    sendResponse({ success: true, bookmark: bookmark });
+  } catch (error) {
+    console.error('Error creating bookmark:', error);
+    sendResponse({ success: false, error: error.message });
+  }
 }
 
-function handleCreateFolder(request, sender, sendResponse) {
-  (async () => {
-    try {
-      if (!request.title || !request.title.trim()) {
-        sendResponse({ success: false, error: 'Folder name cannot be empty' });
-        return;
-      }
-
-      const folder = await chrome.bookmarks.create({
-        parentId: request.parentId || '1',
-        title: request.title.trim()
-      });
-
-      sendResponse({ success: true, folder });
-    } catch (error) {
-      console.error('Error creating folder:', error);
-      sendResponse({ success: false, error: error.message });
+async function handleCreateFolder(request, sender, sendResponse) {
+  try {
+    if (!request.title || !request.title.trim()) {
+      sendResponse({ success: false, error: 'Folder name cannot be empty' });
+      return;
     }
-  })();
-  return true; // Keep message channel open for async response
+
+    const folder = await chrome.bookmarks.create({
+      parentId: request.parentId || '1',
+      title: request.title.trim()
+    });
+
+    sendResponse({ success: true, folder });
+  } catch (error) {
+    console.error('Error creating folder:', error);
+    sendResponse({ success: false, error: error.message });
+  }
 }
 
 function handleRefreshGroupedTabs(request, sender, sendResponse) {
