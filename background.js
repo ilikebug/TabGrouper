@@ -2179,7 +2179,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       }
       
       if (sections[newSection].items.length > 0) {
-        updateSelection(newSection, 0);
+        updateSelection(newSection, 0, sections);
       }
     };
 
@@ -2875,21 +2875,13 @@ async function getPreferredInjectionTab(activeTab) {
 }
 
 chrome.commands.onCommand.addListener(async (command) => {
-  console.log('Command received:', command);
-  
   if (command === COMMANDS.OPEN_SEARCH_BOX) {
-    console.log('Processing open-search-box command');
-    
     try {
-      console.log('Getting tabs and bookmarks...');
       const [alltabs, activeTab, bookmarkTreeNodes] = await Promise.all([
         getAllTabs(),
         getActiveTab(),
         getBookmarkTree()
       ]);
-
-      console.log('Active tab:', activeTab ? activeTab.url : 'none');
-      console.log('All tabs count:', alltabs.length);
 
       const injectionTab = await getPreferredInjectionTab(activeTab);
 
@@ -2900,15 +2892,11 @@ chrome.commands.onCommand.addListener(async (command) => {
           await chrome.tabs.update(injectionTab.id, { active: true });
         }
 
-        console.log('Injecting script into tab:', injectionTab.id);
-        
         await chrome.scripting.executeScript({
           target: { tabId: injectionTab.id },
           function: tabGrouper,
           args: [bookmarkTreeNodes, alltabs]
         });
-        
-        console.log('Script injection completed');
       } else {
         console.warn('Cannot inject script - no injectable tab found in current window');
       }
@@ -2916,13 +2904,10 @@ chrome.commands.onCommand.addListener(async (command) => {
       console.error('Script execution error:', error);
     }
   } else if (command === COMMANDS.COPY_CURRENT_URL) {
-    console.log('Processing copy-current-url command');
     
     try {
       const activeTab = await getActiveTab();
       if (activeTab && activeTab.url) {
-        console.log('Copying URL:', activeTab.url);
-        
         // Use a simpler approach without user permission prompts
         if (!activeTab.url.startsWith('chrome://')) {
           await chrome.scripting.executeScript({
