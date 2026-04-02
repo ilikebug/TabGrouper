@@ -587,40 +587,62 @@ function isInjectableTab(tab) {
   return tab.url.startsWith('http://') || tab.url.startsWith('https://');
 }
 
-async function getPreferredInjectionTab(activeTab) {
-  if (isInjectableTab(activeTab)) {
-    return activeTab;
-  }
+function isPolicyBlockedError(error) {
+  const msg = error?.message || '';
+  return msg.includes('ExtensionsSettings') ||
+         msg.includes('cannot be scripted') ||
+         msg.includes('Cannot access');
+}
 
-  const currentWindowTabs = await chrome.tabs.query({ currentWindow: true });
-  return currentWindowTabs.find(isInjectableTab) || null;
+async function tryInjectTabGrouper(tabId, bookmarkTreeNodes, alltabs) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    function: tabGrouper,
+    args: [bookmarkTreeNodes, alltabs]
+  });
 }
 
 chrome.commands.onCommand.addListener(async (command) => {
   if (command === COMMANDS.OPEN_SEARCH_BOX) {
     try {
-      const [alltabs, activeTab, bookmarkTreeNodes] = await Promise.all([
+      const [alltabs, activeTab, bookmarkTreeNodes, windowTabs] = await Promise.all([
         getAllTabs(),
         getActiveTab(),
-        getBookmarkTree()
+        getBookmarkTree(),
+        chrome.tabs.query({ currentWindow: true })
       ]);
 
-      const injectionTab = await getPreferredInjectionTab(activeTab);
+      // Build candidate list: active tab first, then other injectable tabs
+      const candidates = [
+        activeTab,
+        ...windowTabs.filter(t => isInjectableTab(t) && t.id !== activeTab?.id)
+      ].filter(isInjectableTab);
 
-      if (injectionTab) {
-        // If the current active tab is not injectable (e.g. chrome://extensions),
-        // switch to an injectable tab first so the overlay can be shown immediately.
-        if (!activeTab || activeTab.id !== injectionTab.id) {
-          await chrome.tabs.update(injectionTab.id, { active: true });
-        }
-
-        await chrome.scripting.executeScript({
-          target: { tabId: injectionTab.id },
-          function: tabGrouper,
-          args: [bookmarkTreeNodes, alltabs]
-        });
-      } else {
+      if (candidates.length === 0) {
         console.warn('Cannot inject script - no injectable tab found in current window');
+        return;
+      }
+
+      let injected = false;
+      for (const tab of candidates) {
+        try {
+          if (tab.id !== activeTab?.id) {
+            await chrome.tabs.update(tab.id, { active: true });
+          }
+          await tryInjectTabGrouper(tab.id, bookmarkTreeNodes, alltabs);
+          injected = true;
+          break;
+        } catch (error) {
+          if (isPolicyBlockedError(error)) {
+            // This tab is blocked by policy — try the next candidate
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      if (!injected) {
+        console.warn('Cannot inject script - all tabs are blocked by extensions policy');
       }
     } catch (error) {
       console.error('Script execution error:', error);
