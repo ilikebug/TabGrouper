@@ -66,6 +66,13 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
 });
 
+// Invalidate supportedHostsCache when hosts are updated from the popup
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes[CONFIG.STORAGE_KEYS.SUPPORTED_HOSTS]) {
+    supportedHostsCache = null;
+  }
+});
+
 async function getAutoCollapseSettings() {
   try {
     const result = await chrome.storage.local.get(CONFIG.STORAGE_KEYS.AUTO_COLLAPSE_SETTINGS);
