@@ -3075,7 +3075,7 @@ function isPromiseLike(value) {
 async function handleActivateTab(request, sender, sendResponse) {
   try {
     await activateTab(request.tabId);
-    
+
     // Also track this tab activation
     try {
       const tab = await chrome.tabs.get(request.tabId);
@@ -3083,13 +3083,12 @@ async function handleActivateTab(request, sender, sendResponse) {
     } catch (error) {
       console.error('Error tracking activated tab:', error);
     }
-    
+
     sendResponse({ success: true });
   } catch (error) {
     console.error('Error activating tab:', error);
     sendResponse({ success: false, error: error.message });
   }
-  return true; // Keep message channel open
 }
 
 // Track processed clicks to prevent duplicates
@@ -3179,7 +3178,6 @@ async function handleRemoveTab(request, sender, sendResponse) {
     console.error('Error removing tab:', error);
     sendResponse({ success: false, error: error.message });
   }
-  return true;
 }
 
 async function handleDeleteBookmark(request, sender, sendResponse) {
