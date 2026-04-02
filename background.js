@@ -455,32 +455,30 @@ async function removeTab(tabId) {
 }
 
 async function searchTabsAndBookmarks(query) {
-  // Search tabs
-  const tabs = await chrome.tabs.query({});
+  const [tabs, supportedHosts, bookmarks] = await Promise.all([
+    chrome.tabs.query({}),
+    getSupportedHosts(),
+    chrome.bookmarks.search(query)
+  ]);
+
   const lowerQuery = query.toLowerCase();
-  
+
   const matchedTabs = tabs.filter(tab =>
-    tab.title.toLowerCase().includes(lowerQuery) ||
-    tab.url.toLowerCase().includes(lowerQuery)
+    tab.title?.toLowerCase().includes(lowerQuery) ||
+    tab.url?.toLowerCase().includes(lowerQuery)
   );
 
-  // Also search by host names
-  const groupedTabs = await groupTabsByHost(tabs);
-  for (const [host, hostTabs] of Object.entries(groupedTabs)) {
+  // Also search by host names using already-fetched supportedHosts
+  const matchedTabIds = new Set(matchedTabs.map(t => t.id));
+  for (const tab of tabs) {
+    if (matchedTabIds.has(tab.id)) continue;
+    const host = mapUrlToHost(tab.url, supportedHosts);
     if (host.toLowerCase().includes(lowerQuery)) {
-      const isHostInMatchedTabs = matchedTabs.some(tab =>
-        tab.title.toLowerCase().includes(lowerQuery) ||
-        tab.url.toLowerCase().includes(lowerQuery)
-      );
-      
-      if (!isHostInMatchedTabs) {
-        matchedTabs.push(...hostTabs);
-      }
+      matchedTabs.push(tab);
+      matchedTabIds.add(tab.id);
     }
   }
 
-  // Search bookmarks
-  const bookmarks = await chrome.bookmarks.search(query);
   const bookmarksWithPath = await Promise.all(
     bookmarks.map(async bookmark => {
       const path = await getBookmarkPath(bookmark.id);
@@ -489,12 +487,12 @@ async function searchTabsAndBookmarks(query) {
         id: bookmark.id,
         title: bookmark.title,
         url: bookmark.url,
-        path: path
+        path
       };
     })
   );
 
-  const results = [
+  return [
     ...matchedTabs.map(tab => ({
       type: 'tab',
       id: tab.id,
@@ -505,8 +503,6 @@ async function searchTabsAndBookmarks(query) {
     })),
     ...bookmarksWithPath
   ];
-
-  return results;
 }
 
 async function getBookmarkPath(bookmarkId) {
