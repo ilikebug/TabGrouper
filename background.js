@@ -59,18 +59,6 @@ const ACTIONS = {
 //
 const AUTO_COLLAPSE_ALARM_NAME = 'autoCollapseCheck';
 
-// Initialize auto-collapse on startup
-chrome.runtime.onStartup.addListener(() => {
-  console.log('🔄 Service Worker started, initializing auto-collapse...');
-  initializeAutoCollapse();
-});
-
-// Also initialize when the extension is installed/enabled
-chrome.runtime.onInstalled.addListener(() => {
-  console.log('🔄 Extension installed/enabled, initializing auto-collapse...');
-  initializeAutoCollapse();
-});
-
 // Handle alarm events
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === AUTO_COLLAPSE_ALARM_NAME) {
@@ -644,15 +632,6 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     console.log('🚀 alltabs:', alltabs?.length || 0);
     
     // All configuration and utilities must be defined within this function
-  function getFaviconUrl(url) {
-    try {
-      const urlObj = new URL(url);
-      return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=16`;
-    } catch (e) {
-      return '';
-    }
-  }
-
   const CONFIG = {
     UI: {
       SEARCH_BOX_ID: 'tab-grouper'
@@ -1246,10 +1225,22 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
   }
   
   function highlightText(text, query) {
-    if (!query || !text) return text;
-    
-    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-    return text.replace(regex, '<mark style="background: rgba(16, 185, 129, 0.3); padding: 1px 2px; border-radius: 2px; font-weight: 600;">$1</mark>');
+    const sourceText = String(text || '');
+    const safeText = escapeHtml(sourceText);
+    if (!query || !sourceText) return safeText;
+
+    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escapedQuery})`, 'gi');
+    return safeText.replace(regex, '<mark style="background: rgba(16, 185, 129, 0.3); padding: 1px 2px; border-radius: 2px; font-weight: 600;">$1</mark>');
+  }
+
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
 
@@ -2944,6 +2935,20 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
 }
 
 // Event listeners
+function isInjectableTab(tab) {
+  if (!tab || !tab.url) return false;
+  return tab.url.startsWith('http://') || tab.url.startsWith('https://');
+}
+
+async function getPreferredInjectionTab(activeTab) {
+  if (isInjectableTab(activeTab)) {
+    return activeTab;
+  }
+
+  const currentWindowTabs = await chrome.tabs.query({ currentWindow: true });
+  return currentWindowTabs.find(isInjectableTab) || null;
+}
+
 chrome.commands.onCommand.addListener(async (command) => {
   console.log('Command received:', command);
   
@@ -2960,19 +2965,27 @@ chrome.commands.onCommand.addListener(async (command) => {
 
       console.log('Active tab:', activeTab ? activeTab.url : 'none');
       console.log('All tabs count:', alltabs.length);
-      
-      if (activeTab && !activeTab.url.startsWith('chrome://')) {
-        console.log('Injecting script into tab:', activeTab.id);
+
+      const injectionTab = await getPreferredInjectionTab(activeTab);
+
+      if (injectionTab) {
+        // If the current active tab is not injectable (e.g. chrome://extensions),
+        // switch to an injectable tab first so the overlay can be shown immediately.
+        if (!activeTab || activeTab.id !== injectionTab.id) {
+          await chrome.tabs.update(injectionTab.id, { active: true });
+        }
+
+        console.log('Injecting script into tab:', injectionTab.id);
         
         await chrome.scripting.executeScript({
-          target: { tabId: activeTab.id },
+          target: { tabId: injectionTab.id },
           function: tabGrouper,
           args: [bookmarkTreeNodes, alltabs]
         });
         
         console.log('Script injection completed');
       } else {
-        console.warn('Cannot inject script - invalid tab or chrome:// page');
+        console.warn('Cannot inject script - no injectable tab found in current window');
       }
     } catch (error) {
       console.error('Script execution error:', error);
@@ -3101,6 +3114,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     [ACTIONS.UPDATE_AUTO_COLLAPSE_SETTINGS]: handleUpdateAutoCollapseSettings,
     'deleteBookmark': handleDeleteBookmark,
     'createBookmark': handleCreateBookmark,
+    'createFolder': handleCreateFolder,
     'ping': handlePing
   };
 
@@ -3110,6 +3124,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const result = handler(request, sender, sendResponse);
       if (result === true) {
         return true; // Keep message channel open for async response
+      }
+      if (isPromiseLike(result)) {
+        result.catch((error) => {
+          console.error('Handler async error:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+        return true; // Promise-based handlers need an open message channel
       }
     } catch (error) {
       console.error('Handler error:', error);
@@ -3121,6 +3142,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
   return false; // Close message channel immediately if no async operation
 });
+
+function isPromiseLike(value) {
+  return !!value && typeof value.then === 'function';
+}
 
 async function handleActivateTab(request, sender, sendResponse) {
   try {
@@ -3280,6 +3305,28 @@ function handleCreateBookmark(request, sender, sendResponse) {
   return true; // Keep message channel open for async response
 }
 
+function handleCreateFolder(request, sender, sendResponse) {
+  (async () => {
+    try {
+      if (!request.title || !request.title.trim()) {
+        sendResponse({ success: false, error: 'Folder name cannot be empty' });
+        return;
+      }
+
+      const folder = await chrome.bookmarks.create({
+        parentId: request.parentId || '1',
+        title: request.title.trim()
+      });
+
+      sendResponse({ success: true, folder });
+    } catch (error) {
+      console.error('Error creating folder:', error);
+      sendResponse({ success: false, error: error.message });
+    }
+  })();
+  return true; // Keep message channel open for async response
+}
+
 function handleRefreshGroupedTabs(request, sender, sendResponse) {
   (async () => {
     try {
@@ -3378,28 +3425,42 @@ function handlePing(request, sender, sendResponse) {
   return false; // Close message channel immediately
 }
 
+async function syncAllTabGroupsWithTitles() {
+  const alltabs = await getAllTabs();
+  const groupedTabs = await groupTabsByHost(alltabs);
+
+  for (const [host, tabs] of Object.entries(groupedTabs)) {
+    const tabIds = tabs
+      .map(tab => tab?.id)
+      .filter(tabId => typeof tabId === 'number');
+
+    if (tabIds.length === 0) {
+      continue;
+    }
+
+    try {
+      chrome.tabs.group({ tabIds }, (groupId) => {
+        if (chrome.runtime.lastError) {
+          console.warn('Failed to create/update group:', chrome.runtime.lastError);
+          return;
+        }
+        chrome.tabGroups.update(groupId, { title: host });
+      });
+    } catch (error) {
+      console.warn(`Failed to sync group title for host "${host}":`, error);
+    }
+  }
+}
+
 chrome.runtime.onInstalled.addListener(async (details) => {
   try {
     console.log('🔧 Extension installed/updated, reason:', details.reason);
-    
-    const alltabs = await getAllTabs();
-    const groupedTabs = await groupTabsByHost(alltabs);
 
-    for (const [host, tabs] of Object.entries(groupedTabs)) {
-      const tabIds = tabs.map(tab => tab.id);
-      
-      chrome.tabs.group({ tabIds }, (groupId) => {
-        if (chrome.runtime.lastError) {
-          console.warn('Failed to create group:', chrome.runtime.lastError);
-          return;
-        }
-        
-        chrome.tabGroups.update(groupId, { title: host });
-      });
-    }
+    await syncAllTabGroupsWithTitles();
 
-    // Initialize auto-collapse functionality and start Service Worker
-    await autoStartServiceWorker();
+    // Initialize auto-collapse functionality after installation/update
+    await initializeAutoCollapse();
+    await ensureAutoCollapseActive();
     
     console.log('✅ Extension installation/update completed');
   } catch (error) {
@@ -3410,7 +3471,9 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 // Initialize auto-collapse on startup
 chrome.runtime.onStartup.addListener(async () => {
   try {
+    await syncAllTabGroupsWithTitles();
     await initializeAutoCollapse();
+    await ensureAutoCollapseActive();
   } catch (error) {
     console.error('Startup auto-collapse initialization error:', error);
   }
@@ -3527,57 +3590,3 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 
 
 console.log('TabGrouper background script loaded successfully');
-
-// Service Worker keep-alive mechanism
-// This helps ensure the service worker stays active and auto-collapse works
-let keepAliveInterval;
-
-function startKeepAlive() {
-  // Clear any existing interval
-  if (keepAliveInterval) {
-    clearInterval(keepAliveInterval);
-  }
-  
-  // Send a keep-alive message every 20 seconds to prevent SW from going idle
-  keepAliveInterval = setInterval(() => {
-    // Just a simple operation to keep the SW alive
-    chrome.storage.local.get('keepAlive', () => {
-      // This operation keeps the service worker active
-      console.log('🔄 Service Worker keep-alive ping');
-    });
-  }, 20000); // 20 seconds
-}
-
-// Auto-start Service Worker when extension is enabled/installed
-async function autoStartServiceWorker() {
-  try {
-    console.log('🚀 Auto-starting Service Worker...');
-    
-    // Trigger a simple chrome API call to wake up the service worker
-    await chrome.storage.local.get('autoStart');
-    
-    // Start keep-alive mechanism
-    startKeepAlive();
-    
-    // Initialize auto-collapse
-    await initializeAutoCollapse();
-    await ensureAutoCollapseActive();
-    
-    console.log('✅ Service Worker auto-start completed');
-  } catch (error) {
-    console.error('❌ Error auto-starting Service Worker:', error);
-  }
-}
-
-
-// Initialize auto-collapse on script load (for service worker reactivation)
-setTimeout(async () => {
-  try {
-    console.log('🔄 Service Worker script loaded, initializing auto-collapse...');
-    await autoStartServiceWorker();
-    
-    console.log('✅ Auto-collapse initialization completed on script load');
-  } catch (error) {
-    console.error('❌ Error initializing auto-collapse on script load:', error);
-  }
-}, 1000);
