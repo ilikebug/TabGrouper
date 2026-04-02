@@ -143,6 +143,7 @@ async function removeTabActivity(tabId) {
 
 async function checkInactiveTabGroups() {
   try {
+    await chrome.storage.session.set({ alarmLastRun: Date.now() });
     const settings = await getAutoCollapseSettings();
     if (!settings.enabled) {
       console.log('Auto-collapse is disabled, skipping check');
@@ -305,6 +306,23 @@ async function initializeAutoCollapse() {
   }
 }
 
+async function recoverMissedAlarm() {
+  try {
+    const settings = await getAutoCollapseSettings();
+    if (!settings.enabled) return;
+    const result = await chrome.storage.session.get('alarmLastRun');
+    const lastRun = result.alarmLastRun;
+    if (!lastRun) return; // No record — first run or fresh browser session
+    const intervalMs = settings.timeoutMinutes * 60 * 1000;
+    if (Date.now() - lastRun > intervalMs * 2) {
+      console.warn('⚠️ Auto-collapse alarm may have been missed — running now');
+      await checkInactiveTabGroups();
+    }
+  } catch (error) {
+    console.error('Error in recoverMissedAlarm:', error);
+  }
+}
+
 // Ensure auto-collapse is working whenever the service worker becomes active
 async function ensureAutoCollapseActive() {
   try {
@@ -322,6 +340,7 @@ async function ensureAutoCollapseActive() {
     } else {
       console.log(`⏰ Auto-collapse alarm is active (next: ${new Date(alarm.scheduledTime).toLocaleTimeString()})`);
     }
+    await recoverMissedAlarm();
   } catch (error) {
     console.error('❌ Error ensuring auto-collapse is active:', error);
     // Try to restart the checker as a fallback
