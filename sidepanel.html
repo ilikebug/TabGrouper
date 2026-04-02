@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>TabGrouper Side Panel</title>
+  <link rel="stylesheet" href="css/sidepanel.css">
+</head>
+
+<body>
+  <div id="container">
+    <div class="header">
+      <div class="logo">🚀 TabGrouper</div>
+      <div class="settings-icon" id="settings-btn" title="Settings">⚙️</div>
+    </div>
+    <div class="search-container">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="search-input" placeholder="Search tabs & bookmarks...">
+        <span class="shortcut-hint">⌘K</span>
+      </div>
+    </div>
+
+    <div class="nav-tabs">
+      <button class="nav-tab active" data-target="tabs">
+        <span class="tab-icon">📑</span>
+        <span class="tab-label">Tabs</span>
+      </button>
+      <button class="nav-tab" data-target="bookmarks">
+        <span class="tab-icon">📚</span>
+        <span class="tab-label">Bookmarks</span>
+      </button>
+      <button class="nav-tab" data-target="history">
+        <span class="tab-icon">🕒</span>
+        <span class="tab-label">History</span>
+      </button>
+    </div>
+
+    <div class="content-area">
+      <div id="tabs-view" class="view-section active">
+        <div class="section-header">
+          <span class="section-icon">📦</span>
+          <h3>Active Groups</h3>
+        </div>
+        <div id="groups-container"></div>
+      </div>
+
+      <div id="bookmarks-view" class="view-section" style="display: none;">
+        <div class="section-header">
+          <span class="section-icon">🔖</span>
+          <h3>Bookmarks</h3>
+        </div>
+        <div id="bookmarks-container"></div>
+      </div>
+
+      <div id="history-view" class="view-section" style="display: none;">
+        <div class="section-header">
+          <span class="section-icon">↺</span>
+          <h3>Recently Closed</h3>
+        </div>
+        <div id="recent-container"></div>
+      </div>
+
+      <div id="search-results-view" class="view-section" style="display: none;">
+        <div class="section-header">
+          <span class="section-icon">🔍</span>
+          <h3>Search Results</h3>
+        </div>
+        <div id="search-results-container"></div>
+      </div>
+    </div>
+  </div>
+  <script src="js/sidepanel.js"></script>
+</body>
+
+</html>
