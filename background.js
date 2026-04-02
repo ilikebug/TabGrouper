@@ -101,18 +101,24 @@ async function saveAutoCollapseSettings(settings) {
 }
 
 let tabActivityCache = null;
+let tabActivityLoadPromise = null;
 
 async function getTabActivity() {
   if (tabActivityCache !== null) return tabActivityCache;
-  try {
-    const result = await chrome.storage.local.get(CONFIG.STORAGE_KEYS.TAB_ACTIVITY);
-    tabActivityCache = result[CONFIG.STORAGE_KEYS.TAB_ACTIVITY] || {};
-    return tabActivityCache;
-  } catch (error) {
-    console.error('Error getting tab activity:', error);
-    tabActivityCache = {};
-    return tabActivityCache;
+  if (!tabActivityLoadPromise) {
+    tabActivityLoadPromise = chrome.storage.local.get(CONFIG.STORAGE_KEYS.TAB_ACTIVITY)
+      .then(result => {
+        tabActivityCache = result[CONFIG.STORAGE_KEYS.TAB_ACTIVITY] || {};
+        return tabActivityCache;
+      })
+      .catch(error => {
+        console.error('Error getting tab activity:', error);
+        tabActivityCache = {};
+        return tabActivityCache;
+      })
+      .finally(() => { tabActivityLoadPromise = null; });
   }
+  return tabActivityLoadPromise;
 }
 
 async function updateTabActivity(tabId, timestamp = Date.now()) {
