@@ -92,65 +92,38 @@ async function saveAutoCollapseSettings(settings) {
   }
 }
 
-async function getTabActivity(retryCount = 0) {
+let tabActivityCache = null;
+
+async function getTabActivity() {
+  if (tabActivityCache !== null) return tabActivityCache;
   try {
     const result = await chrome.storage.local.get(CONFIG.STORAGE_KEYS.TAB_ACTIVITY);
-    return result[CONFIG.STORAGE_KEYS.TAB_ACTIVITY] || {};
+    tabActivityCache = result[CONFIG.STORAGE_KEYS.TAB_ACTIVITY] || {};
+    return tabActivityCache;
   } catch (error) {
     console.error('Error getting tab activity:', error);
-    
-    // Retry up to 2 times for "No SW" errors
-    if (error.message?.includes('No SW') && retryCount < 2) {
-      console.log(`🔄 Retrying storage access (attempt ${retryCount + 1}/3)...`);
-      await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
-      return getTabActivity(retryCount + 1);
-    }
-    
-    // Return empty object as fallback
-    console.warn('📊 Using empty tab activity as fallback');
-    return {};
+    tabActivityCache = {};
+    return tabActivityCache;
   }
 }
 
-async function updateTabActivity(tabId, timestamp = Date.now(), retryCount = 0) {
+async function updateTabActivity(tabId, timestamp = Date.now()) {
   try {
     const tabActivity = await getTabActivity();
     tabActivity[tabId] = timestamp;
-    await chrome.storage.local.set({
-      [CONFIG.STORAGE_KEYS.TAB_ACTIVITY]: tabActivity
-    });
+    await chrome.storage.local.set({ [CONFIG.STORAGE_KEYS.TAB_ACTIVITY]: tabActivity });
   } catch (error) {
     console.error('Error updating tab activity:', error);
-    
-    // Retry for "No SW" errors
-    if (error.message?.includes('No SW') && retryCount < 2) {
-      console.log(`🔄 Retrying tab activity update (attempt ${retryCount + 1}/3)...`);
-      await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
-      return updateTabActivity(tabId, timestamp, retryCount + 1);
-    }
-    
-    console.warn('⚠️ Failed to update tab activity - operation skipped');
   }
 }
 
-async function removeTabActivity(tabId, retryCount = 0) {
+async function removeTabActivity(tabId) {
   try {
     const tabActivity = await getTabActivity();
     delete tabActivity[tabId];
-    await chrome.storage.local.set({
-      [CONFIG.STORAGE_KEYS.TAB_ACTIVITY]: tabActivity
-    });
+    await chrome.storage.local.set({ [CONFIG.STORAGE_KEYS.TAB_ACTIVITY]: tabActivity });
   } catch (error) {
     console.error('Error removing tab activity:', error);
-    
-    // Retry for "No SW" errors
-    if (error.message?.includes('No SW') && retryCount < 2) {
-      console.log(`🔄 Retrying tab activity removal (attempt ${retryCount + 1}/3)...`);
-      await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
-      return removeTabActivity(tabId, retryCount + 1);
-    }
-    
-    console.warn('⚠️ Failed to remove tab activity - operation skipped');
   }
 }
 
@@ -287,19 +260,21 @@ async function checkInactiveTabGroups() {
     console.log(`🎯 Check completed - collapsed ${collapsedCount} groups`);
     
     // Clean up activity tracking for tabs that no longer exist (less frequent)
-    if (Math.random() < 0.1) { // Only clean up 10% of the time to reduce overhead
+    if (Math.random() < 0.1) {
       const currentTabIds = new Set(tabs.map(tab => tab.id));
+      const tabActivity = await getTabActivity();
       const trackedTabIds = Object.keys(tabActivity).map(id => parseInt(id));
-      
+
       let cleanedCount = 0;
       for (const tabId of trackedTabIds) {
         if (!currentTabIds.has(tabId)) {
-          await removeTabActivity(tabId);
+          delete tabActivity[tabId];
           cleanedCount++;
         }
       }
-      
+
       if (cleanedCount > 0) {
+        await chrome.storage.local.set({ [CONFIG.STORAGE_KEYS.TAB_ACTIVITY]: tabActivity });
         console.log(`🧹 Cleaned up ${cleanedCount} stale activity records`);
       }
     }
