@@ -439,23 +439,16 @@ async function groupTabsByHost(tabs) {
 }
 
 function getAllTabs() {
-  return new Promise((resolve) => {
-    chrome.tabs.query({}, resolve);
-  });
+  return chrome.tabs.query({});
 }
 
 function getActiveTab() {
-  return new Promise((resolve) => {
-    chrome.tabs.query({ currentWindow: true, active: true }, (tabs) => {
-      resolve(tabs.length > 0 ? tabs[0] : null);
-    });
-  });
+  return chrome.tabs.query({ currentWindow: true, active: true })
+    .then(tabs => tabs[0] ?? null);
 }
 
 function getBookmarkTree() {
-  return new Promise((resolve) => {
-    chrome.bookmarks.getTree(resolve);
-  });
+  return chrome.bookmarks.getTree();
 }
 
 // Helper function for safe tab operations with retry logic
