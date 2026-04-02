@@ -3399,7 +3399,6 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   // Update tab activity when tab is updated
   try {
     await updateTabActivity(tabId);
-    console.log(`🔄 Tab updated and time recorded: ${tabId}`);
   } catch (error) {
     console.error('Error updating tab activity on update:', error);
   }
@@ -3426,30 +3425,24 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 async function trackRecentTab(tab) {
   try {
     if (!tab) {
-      console.log('Skipping: no tab object');
-      return;
-    }
-    
-    if (!tab.url) {
-      console.log('Skipping: no URL for tab', tab.id);
-      return;
-    }
-    
-    if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
-      console.log('Skipping chrome:// or extension URL:', tab.url);
-      return;
-    }
-    
-    if (tab.url === 'about:blank' || tab.url === '') {
-      console.log('Skipping blank page');
       return;
     }
 
-    console.log('✓ Tracking tab:', tab.title || 'No title', tab.url);
-    
+    if (!tab.url) {
+      return;
+    }
+
+    if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+      return;
+    }
+
+    if (tab.url === 'about:blank' || tab.url === '') {
+      return;
+    }
+
     // Use the global addToRecentTabs function
     await addToRecentTabs(tab);
-    
+
   } catch (error) {
     console.error('Error tracking recent tab:', error, tab);
   }
