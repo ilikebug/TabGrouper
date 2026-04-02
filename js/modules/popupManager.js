@@ -15,9 +15,18 @@ export class PopupManager {
    * Initialize popup functionality
    */
   async init() {
-    // Ensure Service Worker is active when popup opens
     await this.ensureServiceWorkerActive();
-    
+
+    this.els = {
+      hostInput: document.getElementById('host-input'),
+      nameInput: document.getElementById('name-input'),
+      hosts: document.getElementById('hosts'),
+      message: document.getElementById('message'),
+      autoCollapseEnabled: document.getElementById('auto-collapse-enabled'),
+      autoCollapseTimeout: document.getElementById('auto-collapse-timeout'),
+      autoCollapseSettings: document.getElementById('auto-collapse-settings'),
+    };
+
     await this.loadSupportedHosts();
     this.setupEventListeners();
     this.displayHosts();
@@ -58,37 +67,26 @@ export class PopupManager {
       setHostButton.addEventListener('click', () => this.handleSetHost());
     }
 
-    // Add Enter key support for inputs
-    const hostInput = document.getElementById('host-input');
-    const nameInput = document.getElementById('name-input');
-    
-    [hostInput, nameInput].forEach(input => {
+    [this.els.hostInput, this.els.nameInput].forEach(input => {
       if (input) {
         input.addEventListener('keypress', (event) => {
-          if (event.key === 'Enter') {
-            this.handleSetHost();
-          }
+          if (event.key === 'Enter') this.handleSetHost();
         });
       }
     });
 
-    // Setup shortcuts management
     const manageShortcutsButton = document.getElementById('manage-shortcuts');
     if (manageShortcutsButton) {
       manageShortcutsButton.addEventListener('click', () => this.openShortcutsManager());
     }
 
-    // Setup auto-collapse functionality
-    const autoCollapseEnabled = document.getElementById('auto-collapse-enabled');
-    const autoCollapseTimeout = document.getElementById('auto-collapse-timeout');
-    
-    if (autoCollapseEnabled) {
-      autoCollapseEnabled.addEventListener('change', () => this.handleAutoCollapseToggle());
+    if (this.els.autoCollapseEnabled) {
+      this.els.autoCollapseEnabled.addEventListener('change', () => this.handleAutoCollapseToggle());
     }
-    
-    if (autoCollapseTimeout) {
-      autoCollapseTimeout.addEventListener('change', () => this.handleAutoCollapseTimeoutChange());
-      autoCollapseTimeout.addEventListener('input', () => this.validateTimeoutInput());
+
+    if (this.els.autoCollapseTimeout) {
+      this.els.autoCollapseTimeout.addEventListener('change', () => this.handleAutoCollapseTimeoutChange());
+      this.els.autoCollapseTimeout.addEventListener('input', () => this.validateTimeoutInput());
     }
   }
 
@@ -96,13 +94,8 @@ export class PopupManager {
    * Handle setting a new host
    */
   async handleSetHost() {
-    const hostInput = document.getElementById('host-input');
-    const nameInput = document.getElementById('name-input');
-    
-    if (!hostInput || !nameInput) return;
-
-    const host = hostInput.value.trim();
-    const name = nameInput.value.trim();
+    const host = this.els.hostInput?.value.trim();
+    const name = this.els.nameInput?.value.trim();
 
     if (host && name) {
       this.supportedHosts[host] = name;
@@ -119,21 +112,19 @@ export class PopupManager {
    * Display supported hosts in categorized format
    */
   displayHosts() {
-    const hostList = document.getElementById('hosts');
+    const hostList = this.els.hosts;
     if (!hostList) return;
 
     hostList.innerHTML = '';
-
     const categories = this.categorizeHosts();
-    
+
     if (Object.keys(categories).length === 0) {
       this.showEmptyState(hostList);
       return;
     }
 
     Object.entries(categories).forEach(([name, hosts]) => {
-      const categoryDiv = this.createCategoryElement(name, hosts);
-      hostList.appendChild(categoryDiv);
+      hostList.appendChild(this.createCategoryElement(name, hosts));
     });
   }
 
@@ -256,18 +247,15 @@ export class PopupManager {
    * Clear input fields
    */
   clearInputs() {
-    const hostInput = document.getElementById('host-input');
-    const nameInput = document.getElementById('name-input');
-    
-    if (hostInput) hostInput.value = '';
-    if (nameInput) nameInput.value = '';
+    if (this.els.hostInput) this.els.hostInput.value = '';
+    if (this.els.nameInput) this.els.nameInput.value = '';
   }
 
   /**
    * Show success message
    */
-  showSuccessMessage() {
-    this.showMessage('Host and name set successfully!', 'green');
+  showSuccessMessage(text = 'Host and name set successfully!') {
+    this.showMessage(text, 'green');
   }
 
   /**
@@ -281,7 +269,7 @@ export class PopupManager {
    * Show message with auto-hide
    */
   showMessage(text, color = 'green') {
-    const message = document.getElementById('message');
+    const message = this.els.message;
     if (!message) return;
 
     message.textContent = text;
@@ -346,38 +334,25 @@ export class PopupManager {
       const response = await chrome.runtime.sendMessage({
         action: ACTIONS.GET_AUTO_COLLAPSE_SETTINGS
       });
-      
-      const autoCollapseEnabled = document.getElementById('auto-collapse-enabled');
-      const autoCollapseTimeout = document.getElementById('auto-collapse-timeout');
-      const autoCollapseSettings = document.getElementById('auto-collapse-settings');
-      
-      // 使用response或默认值
+
       const enabled = response ? response.enabled : false;
       const timeoutMinutes = response ? response.timeoutMinutes : 5;
-      
-      if (autoCollapseEnabled) {
-        autoCollapseEnabled.checked = enabled;
+
+      if (this.els.autoCollapseEnabled) {
+        this.els.autoCollapseEnabled.checked = enabled;
         this.updateAutoCollapseUI(enabled);
       }
-      
-      if (autoCollapseTimeout) {
-        autoCollapseTimeout.value = timeoutMinutes;
+      if (this.els.autoCollapseTimeout) {
+        this.els.autoCollapseTimeout.value = timeoutMinutes;
       }
-      
     } catch (error) {
       console.error('Error loading auto-collapse settings:', error);
-      
-      // 出错时设置默认值
-      const autoCollapseEnabled = document.getElementById('auto-collapse-enabled');
-      const autoCollapseTimeout = document.getElementById('auto-collapse-timeout');
-      
-      if (autoCollapseEnabled) {
-        autoCollapseEnabled.checked = false;
+      if (this.els.autoCollapseEnabled) {
+        this.els.autoCollapseEnabled.checked = false;
         this.updateAutoCollapseUI(false);
       }
-      
-      if (autoCollapseTimeout) {
-        autoCollapseTimeout.value = 5;
+      if (this.els.autoCollapseTimeout) {
+        this.els.autoCollapseTimeout.value = 5;
       }
     }
   }
@@ -386,14 +361,9 @@ export class PopupManager {
    * Handle auto-collapse toggle
    */
   async handleAutoCollapseToggle() {
-    const autoCollapseEnabled = document.getElementById('auto-collapse-enabled');
-    const autoCollapseTimeout = document.getElementById('auto-collapse-timeout');
-    
-    if (!autoCollapseEnabled || !autoCollapseTimeout) return;
-    
-    const enabled = autoCollapseEnabled.checked;
-    const timeoutMinutes = parseInt(autoCollapseTimeout.value) || 5;
-    
+    if (!this.els.autoCollapseEnabled || !this.els.autoCollapseTimeout) return;
+    const enabled = this.els.autoCollapseEnabled.checked;
+    const timeoutMinutes = parseInt(this.els.autoCollapseTimeout.value) || 5;
     this.updateAutoCollapseUI(enabled);
     await this.saveAutoCollapseSettings(enabled, timeoutMinutes);
   }
@@ -402,14 +372,9 @@ export class PopupManager {
    * Handle auto-collapse timeout change
    */
   async handleAutoCollapseTimeoutChange() {
-    const autoCollapseEnabled = document.getElementById('auto-collapse-enabled');
-    const autoCollapseTimeout = document.getElementById('auto-collapse-timeout');
-    
-    if (!autoCollapseEnabled || !autoCollapseTimeout) return;
-    
-    const enabled = autoCollapseEnabled.checked;
-    const timeoutMinutes = parseInt(autoCollapseTimeout.value) || 5;
-    
+    if (!this.els.autoCollapseEnabled || !this.els.autoCollapseTimeout) return;
+    const enabled = this.els.autoCollapseEnabled.checked;
+    const timeoutMinutes = parseInt(this.els.autoCollapseTimeout.value) || 5;
     await this.saveAutoCollapseSettings(enabled, timeoutMinutes);
   }
 
@@ -417,30 +382,21 @@ export class PopupManager {
    * Validate timeout input
    */
   validateTimeoutInput() {
-    const autoCollapseTimeout = document.getElementById('auto-collapse-timeout');
-    if (!autoCollapseTimeout) return;
-    
-    let value = parseInt(autoCollapseTimeout.value);
-    if (isNaN(value) || value < 1) {
-      value = 1;
-    } else if (value > 60) {
-      value = 60;
-    }
-    
-    autoCollapseTimeout.value = value;
+    const input = this.els.autoCollapseTimeout;
+    if (!input) return;
+    let value = parseInt(input.value);
+    if (isNaN(value) || value < 1) value = 1;
+    else if (value > 60) value = 60;
+    input.value = value;
   }
 
   /**
    * Update auto-collapse UI based on enabled state
    */
   updateAutoCollapseUI(enabled) {
-    const autoCollapseSettings = document.getElementById('auto-collapse-settings');
-    if (autoCollapseSettings) {
-      if (enabled) {
-        autoCollapseSettings.classList.remove('disabled');
-      } else {
-        autoCollapseSettings.classList.add('disabled');
-      }
+    const settings = this.els.autoCollapseSettings;
+    if (settings) {
+      settings.classList.toggle('disabled', !enabled);
     }
   }
 
