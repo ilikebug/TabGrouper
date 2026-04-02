@@ -647,12 +647,12 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       <div style="padding: 24px;">
         <div style="margin-bottom: 20px;">
           <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151; font-size: 14px;">📝 Bookmark Name</label>
-          <input type="text" id="bookmark-title" value="${currentTab.title || ''}" placeholder="Enter bookmark name" style="width: 100%; padding: 12px 16px; border: 2px solid transparent; border-radius: 12px; background: rgba(248, 250, 252, 0.8); font-size: 14px; font-weight: 500; color: #1e293b; box-sizing: border-box; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);">
+          <input type="text" id="bookmark-title" placeholder="Enter bookmark name" style="width: 100%; padding: 12px 16px; border: 2px solid transparent; border-radius: 12px; background: rgba(248, 250, 252, 0.8); font-size: 14px; font-weight: 500; color: #1e293b; box-sizing: border-box; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);">
         </div>
-        
+
         <div style="margin-bottom: 20px;">
           <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151; font-size: 14px;">🔗 Web Address</label>
-          <input type="text" value="${currentTab.url || ''}" readonly style="width: 100%; padding: 12px 16px; border: 2px solid transparent; border-radius: 12px; background: rgba(241, 245, 249, 0.6); font-size: 14px; font-weight: 500; color: #64748b; box-sizing: border-box; cursor: default;">
+          <input type="text" id="bookmark-url" readonly style="width: 100%; padding: 12px 16px; border: 2px solid transparent; border-radius: 12px; background: rgba(241, 245, 249, 0.6); font-size: 14px; font-weight: 500; color: #64748b; box-sizing: border-box; cursor: default;">
         </div>
         
         <div>
@@ -677,6 +677,8 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         </button>
       </div>
     `;
+    dialog.querySelector('#bookmark-title').value = currentTab.title || '';
+    dialog.querySelector('#bookmark-url').value = currentTab.url || '';
 
     dialogOverlay.appendChild(dialog);
     document.body.appendChild(dialogOverlay);
@@ -766,11 +768,18 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         color: #374151;
       `;
       
-      folderItem.innerHTML = `
-        ${'<div style="width: 20px; flex-shrink: 0;"></div>'.repeat(folder.level)}
-        <span style="margin-right: 8px; font-size: 16px;">📁</span>
-        <span>${folder.title}</span>
-      `;
+      for (let i = 0; i < folder.level; i++) {
+        const spacer = document.createElement('div');
+        spacer.style.cssText = 'width: 20px; flex-shrink: 0;';
+        folderItem.appendChild(spacer);
+      }
+      const folderIcon = document.createElement('span');
+      folderIcon.style.cssText = 'margin-right: 8px; font-size: 16px;';
+      folderIcon.textContent = '📁';
+      folderItem.appendChild(folderIcon);
+      const folderLabel = document.createElement('span');
+      folderLabel.textContent = folder.title;
+      folderItem.appendChild(folderLabel);
       
       folderItem.addEventListener('click', () => selectFolder(folderItem));
       folderItem.addEventListener('mouseover', () => {
@@ -968,9 +977,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         
         <div>
           <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151; font-size: 14px;">📂 Create Location</label>
-          <div style="background: rgba(99, 102, 241, 0.1); color: #6366f1; padding: 12px 16px; border-radius: 10px; font-size: 14px; font-weight: 500; border: 1px solid rgba(99, 102, 241, 0.2);">
-            Create under "${parentFolderName}"
-          </div>
+          <div id="folder-location-display" style="background: rgba(99, 102, 241, 0.1); color: #6366f1; padding: 12px 16px; border-radius: 10px; font-size: 14px; font-weight: 500; border: 1px solid rgba(99, 102, 241, 0.2);"></div>
         </div>
       </div>
       
@@ -982,6 +989,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         </button>
       </div>
     `;
+    folderDialog.querySelector('#folder-location-display').textContent = `Create under "${parentFolderName}"`;
 
     folderDialogOverlay.appendChild(folderDialog);
     document.body.appendChild(folderDialogOverlay);
