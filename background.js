@@ -465,11 +465,14 @@ async function removeTab(tabId) {
 }
 
 async function searchTabsAndBookmarks(query) {
-  const [tabs, supportedHosts, bookmarks] = await Promise.all([
+  const [tabs, supportedHosts, bookmarks, bookmarkTree] = await Promise.all([
     chrome.tabs.query({}),
     getSupportedHosts(),
-    chrome.bookmarks.search(query)
+    chrome.bookmarks.search(query),
+    chrome.bookmarks.getTree()
   ]);
+
+  const nodeMap = buildBookmarkNodeMap(bookmarkTree);
 
   const lowerQuery = query.toLowerCase();
 
@@ -489,18 +492,13 @@ async function searchTabsAndBookmarks(query) {
     }
   }
 
-  const bookmarksWithPath = await Promise.all(
-    bookmarks.map(async bookmark => {
-      const path = await getBookmarkPath(bookmark.id);
-      return {
-        type: 'bookmark',
-        id: bookmark.id,
-        title: bookmark.title,
-        url: bookmark.url,
-        path
-      };
-    })
-  );
+  const bookmarksWithPath = bookmarks.map(bookmark => ({
+    type: 'bookmark',
+    id: bookmark.id,
+    title: bookmark.title,
+    url: bookmark.url,
+    path: getBookmarkPathFromMap(bookmark.id, nodeMap)
+  }));
 
   return [
     ...matchedTabs.map(tab => ({
@@ -515,22 +513,25 @@ async function searchTabsAndBookmarks(query) {
   ];
 }
 
-async function getBookmarkPath(bookmarkId) {
-  const getNode = async (id) => {
-    const nodes = await chrome.bookmarks.get(id);
-    return nodes[0];
-  };
-
-  const path = [];
-  let currentNode = await getNode(bookmarkId);
-
-  while (currentNode.parentId) {
-    currentNode = await getNode(currentNode.parentId);
-    if (currentNode.title) {
-      path.unshift(currentNode.title);
+function buildBookmarkNodeMap(tree) {
+  const nodeMap = {};
+  const traverse = (nodes) => {
+    for (const node of nodes) {
+      nodeMap[node.id] = node;
+      if (node.children) traverse(node.children);
     }
-  }
+  };
+  traverse(tree);
+  return nodeMap;
+}
 
+function getBookmarkPathFromMap(bookmarkId, nodeMap) {
+  const path = [];
+  let node = nodeMap[bookmarkId];
+  while (node && node.parentId) {
+    node = nodeMap[node.parentId];
+    if (node && node.title) path.unshift(node.title);
+  }
   return path;
 }
 
