@@ -66,7 +66,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
 });
 
-async function getAutoCollapseSettings(retryCount = 0) {
+async function getAutoCollapseSettings() {
   try {
     const result = await chrome.storage.local.get(CONFIG.STORAGE_KEYS.AUTO_COLLAPSE_SETTINGS);
     return result[CONFIG.STORAGE_KEYS.AUTO_COLLAPSE_SETTINGS] || {
@@ -75,16 +75,6 @@ async function getAutoCollapseSettings(retryCount = 0) {
     };
   } catch (error) {
     console.error('Error getting auto-collapse settings:', error);
-    
-    // Retry for "No SW" errors
-    if (error.message?.includes('No SW') && retryCount < 2) {
-      console.log(`🔄 Retrying settings access (attempt ${retryCount + 1}/3)...`);
-      await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
-      return getAutoCollapseSettings(retryCount + 1);
-    }
-    
-    // Return default settings as fallback
-    console.warn('⚙️ Using default auto-collapse settings as fallback');
     return {
       enabled: CONFIG.AUTO_COLLAPSE.DEFAULT_ENABLED,
       timeoutMinutes: CONFIG.AUTO_COLLAPSE.DEFAULT_TIMEOUT_MINUTES
