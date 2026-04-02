@@ -529,38 +529,36 @@ async function getBookmarkPath(bookmarkId) {
 }
 
 // Recent tabs functions - truly global scope
+let recentTabsCache = null;
+
 async function getRecentTabs() {
+  if (recentTabsCache !== null) {
+    const now = Date.now();
+    const twentyFourHoursAgo = now - (24 * 60 * 60 * 1000);
+    recentTabsCache = recentTabsCache.filter(tab => tab.timestamp > twentyFourHoursAgo);
+    return recentTabsCache;
+  }
   try {
     const result = await chrome.storage.local.get(CONFIG.STORAGE_KEYS.RECENT_TABS);
     const allTabs = result[CONFIG.STORAGE_KEYS.RECENT_TABS] || [];
-    
-    // Filter out tabs older than 24 hours
     const now = Date.now();
     const twentyFourHoursAgo = now - (24 * 60 * 60 * 1000);
-    const validTabs = allTabs.filter(tab => tab.timestamp > twentyFourHoursAgo);
-    
-    // Update storage if we filtered out expired tabs
-    if (validTabs.length !== allTabs.length) {
-      await chrome.storage.local.set({
-        [CONFIG.STORAGE_KEYS.RECENT_TABS]: validTabs
-      });
+    recentTabsCache = allTabs.filter(tab => tab.timestamp > twentyFourHoursAgo);
+    if (recentTabsCache.length !== allTabs.length) {
+      await chrome.storage.local.set({ [CONFIG.STORAGE_KEYS.RECENT_TABS]: recentTabsCache });
     }
-    
-    return validTabs;
+    return recentTabsCache;
   } catch (error) {
     console.error('Error getting recent tabs:', error);
-    return [];
+    recentTabsCache = [];
+    return recentTabsCache;
   }
 }
 
 async function addToRecentTabs(tab) {
   try {
     const recentTabs = await getRecentTabs();
-    
-    // Remove existing entry if present (by URL instead of ID)
     const filteredTabs = recentTabs.filter(item => item.url !== tab.url);
-    
-    // Add to front with timestamp
     const newEntry = {
       id: tab.id,
       title: tab.title,
@@ -568,14 +566,9 @@ async function addToRecentTabs(tab) {
       favicon: tab.favIconUrl,
       timestamp: Date.now()
     };
-    
     filteredTabs.unshift(newEntry);
-    
-    // No limit on count - rely on 24h expiry for cleanup
-    await chrome.storage.local.set({
-      [CONFIG.STORAGE_KEYS.RECENT_TABS]: filteredTabs
-    });
-    console.log('Global addToRecentTabs: added', tab.title, 'total count:', filteredTabs.length);
+    recentTabsCache = filteredTabs;
+    await chrome.storage.local.set({ [CONFIG.STORAGE_KEYS.RECENT_TABS]: filteredTabs });
   } catch (error) {
     console.error('Error adding to recent tabs:', error);
   }
