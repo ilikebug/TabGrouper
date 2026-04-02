@@ -2131,8 +2131,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       ];
     };
     
-    const updateSelection = (sectionIndex, itemIndex) => {
-      const sections = getSections();
+    const updateSelection = (sectionIndex, itemIndex, sections) => {
       
       // Remove all selection styles
       sections.forEach(section => {
@@ -2156,7 +2155,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         } else if (section.items.length > 0) {
           // If index is out of bounds but area has items, select first or last
           const newIndex = itemIndex < 0 ? 0 : section.items.length - 1;
-          updateSelection(sectionIndex, newIndex);
+          updateSelection(sectionIndex, newIndex, sections);
         }
       } else {
         currentSection = 0;
@@ -2164,8 +2163,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       }
     };
     
-    const switchToSection = (direction) => {
-      const sections = getSections();
+    const switchToSection = (direction, sections) => {
       let newSection = currentSection;
       
       if (direction > 0) {
@@ -2195,7 +2193,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       if (event.key === 'Tab') {
         event.preventDefault();
         const direction = event.shiftKey ? -1 : 1;
-        switchToSection(direction);
+        switchToSection(direction, sections);
         return;
       }
       
@@ -2205,7 +2203,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
           // No item selected, select first item in first area with content
           for (let i = 0; i < sections.length; i++) {
             if (sections[i].items.length > 0) {
-              updateSelection(i, 0);
+              updateSelection(i, 0, sections);
               break;
             }
           }
@@ -2213,7 +2211,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
           // Navigate down within current area
           const currentSectionItems = sections[currentSection].items;
           const newIndex = selectedIndex < currentSectionItems.length - 1 ? selectedIndex + 1 : 0;
-          updateSelection(currentSection, newIndex);
+          updateSelection(currentSection, newIndex, sections);
         }
         return;
       }
@@ -2224,7 +2222,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
           // No item selected, select last item in first area with content
           for (let i = 0; i < sections.length; i++) {
             if (sections[i].items.length > 0) {
-              updateSelection(i, sections[i].items.length - 1);
+              updateSelection(i, sections[i].items.length - 1, sections);
               break;
             }
           }
@@ -2232,7 +2230,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
           // Navigate up within current area
           const currentSectionItems = sections[currentSection].items;
           const newIndex = selectedIndex > 0 ? selectedIndex - 1 : currentSectionItems.length - 1;
-          updateSelection(currentSection, newIndex);
+          updateSelection(currentSection, newIndex, sections);
         }
         return;
       }
