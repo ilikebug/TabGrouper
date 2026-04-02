@@ -1226,16 +1226,12 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
 
   function mapUrlToHost(url, supportedHosts = {}) {
     let host = extractHostFromUrl(url);
-    
-    if (supportedHosts) {
-      for (const [key, value] of Object.entries(supportedHosts)) {
-        if (url.includes(key)) {
-          host = value;
-          break;
-        }
+    for (const [key, value] of Object.entries(supportedHosts)) {
+      if (url.includes(key)) {
+        host = value;
+        break;
       }
     }
-    
     return host;
   }
 
