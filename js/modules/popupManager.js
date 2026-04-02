@@ -287,7 +287,8 @@ export class PopupManager {
   async loadShortcuts() {
     try {
       const commands = await chrome.commands.getAll();
-      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const isMac = navigator.userAgentData?.platform === 'macOS'
+        || navigator.platform.toUpperCase().includes('MAC');
       
       commands.forEach(command => {
         let shortcutElement = null;
