@@ -1,6 +1,6 @@
 // search-ui.js — Injected search overlay for TabGrouper
-// Loaded via importScripts() in background.js.
-// Injected into page context via chrome.scripting.executeScript({ function: tabGrouper, args: [...] }).
+// Loaded via importScripts() in background.js and injected as a file via chrome.scripting.executeScript().
+// The background script calls globalThis.tabGrouper(...) after injection.
 // Must be self-contained: no imports, no external references.
 
 function teardownSearchBox(searchBox) {
@@ -2330,11 +2330,12 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
 
   // Main execution
   const existingBox = document.getElementById(CONFIG.UI.SEARCH_BOX_ID);
+  const mode = (globalThis.__TAB_GROUPER_PAYLOAD__ && globalThis.__TAB_GROUPER_PAYLOAD__.mode) || 'toggle';
   if (existingBox) {
-    // Properly blur any focused elements before removal
-    const activeElement = document.activeElement;
-    if (activeElement && existingBox.contains(activeElement)) {
-      activeElement.blur();
+    if (mode === 'refresh') {
+      teardownSearchBox(existingBox);
+      createSearchBox(bookmarkTreeNodes, alltabs);
+      return;
     }
 
     teardownSearchBox(existingBox);
@@ -2347,3 +2348,4 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     console.error('🚨 Stack trace:', error.stack);
   }
 }
+globalThis.tabGrouper = tabGrouper;

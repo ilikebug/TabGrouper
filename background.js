@@ -638,14 +638,27 @@ function isPolicyBlockedError(error) {
   const msg = error?.message || '';
   return msg.includes('ExtensionsSettings') ||
          msg.includes('cannot be scripted') ||
-         msg.includes('Cannot access');
+         msg.includes('Cannot access contents of url') ||
+         msg.includes('The extensions gallery cannot be scripted');
 }
 
 async function tryInjectTabGrouper(tabId, bookmarkTreeNodes, alltabs) {
   await chrome.scripting.executeScript({
     target: { tabId },
-    function: tabGrouper,
-    args: [bookmarkTreeNodes, alltabs]
+    files: ['search-ui.js']
+  });
+
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (injectedBookmarks, injectedTabs, mode) => {
+      globalThis.__TAB_GROUPER_PAYLOAD__ = { mode };
+      if (typeof globalThis.tabGrouper === 'function') {
+        globalThis.tabGrouper(injectedBookmarks, injectedTabs);
+      } else {
+        throw new Error('tabGrouper function is not available after script injection');
+      }
+    },
+    args: [bookmarkTreeNodes, alltabs, 'toggle']
   });
 }
 
@@ -680,6 +693,7 @@ chrome.commands.onCommand.addListener(async (command) => {
           injected = true;
           break;
         } catch (error) {
+          console.warn(`Injection failed for tab ${tab.id} (${tab.url}):`, error?.message || error);
           if (isPolicyBlockedError(error)) {
             // This tab is blocked by policy — try the next candidate
             continue;
@@ -1005,8 +1019,20 @@ function handleRefreshGroupedTabs(request, sender, sendResponse) {
       if (activeTab) {
         await chrome.scripting.executeScript({
           target: { tabId: activeTab.id },
-          function: tabGrouper,
-          args: [bookmarkTreeNodes, alltabs]
+          files: ['search-ui.js']
+        });
+
+        await chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          func: (injectedBookmarks, injectedTabs, mode) => {
+            globalThis.__TAB_GROUPER_PAYLOAD__ = { mode };
+            if (typeof globalThis.tabGrouper === 'function') {
+              globalThis.tabGrouper(injectedBookmarks, injectedTabs);
+            } else {
+              throw new Error('tabGrouper function is not available after script injection');
+            }
+          },
+          args: [bookmarkTreeNodes, alltabs, 'refresh']
         });
       }
       
