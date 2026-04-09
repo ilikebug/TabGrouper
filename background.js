@@ -49,7 +49,8 @@ const ACTIONS = {
   SEARCH: 'search',
   OPEN_QUICK_ACCESS_TAB: 'openQuickAccessTab',
   GET_AUTO_COLLAPSE_SETTINGS: 'getAutoCollapseSettings',
-  UPDATE_AUTO_COLLAPSE_SETTINGS: 'updateAutoCollapseSettings'
+  UPDATE_AUTO_COLLAPSE_SETTINGS: 'updateAutoCollapseSettings',
+  APPLY_HOST_MAPPING: 'applyHostMapping'
 };
 
 // Auto-collapse functionality using Chrome Alarms API
@@ -72,9 +73,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (changes[CONFIG.STORAGE_KEYS.SUPPORTED_HOSTS]) {
     supportedHostsCache = null;
-    // Re-sync all tab groups so existing tabs pick up the new host mapping
-    syncAllTabGroupsWithTitles().catch(err =>
-      console.error('Error re-syncing tab groups after host mapping change:', err)
+    // Rename existing tab groups to reflect the updated host mapping
+    applyHostMappingToExistingGroups().catch(err =>
+      console.error('Error applying host mapping to existing groups:', err)
     );
   }
   if (changes[CONFIG.STORAGE_KEYS.TAB_ACTIVITY]) { tabActivityCache = null; tabActivityLoadPromise = null; }
@@ -833,7 +834,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     'deleteBookmark': handleDeleteBookmark,
     'createBookmark': handleCreateBookmark,
     'createFolder': handleCreateFolder,
-    'ping': handlePing
+    'ping': handlePing,
+    [ACTIONS.APPLY_HOST_MAPPING]: handleApplyHostMapping
   };
 
   const handler = messageHandlers[request.action];
@@ -1115,12 +1117,23 @@ function handleUpdateAutoCollapseSettings(request, sender, sendResponse) {
 
 function handlePing(request, sender, sendResponse) {
   console.log('🏓 Service Worker ping received, responding with pong');
-  
+
   // Ensure auto-collapse is active when we get pinged
   ensureAutoCollapseActive();
-  
+
   sendResponse({ success: true, message: 'pong' });
   return false; // Close message channel immediately
+}
+
+async function handleApplyHostMapping(request, sender, sendResponse) {
+  try {
+    supportedHostsCache = null; // force fresh read from storage
+    await applyHostMappingToExistingGroups();
+    sendResponse({ success: true });
+  } catch (error) {
+    console.error('Error applying host mapping:', error);
+    sendResponse({ success: false, error: error.message });
+  }
 }
 
 async function syncAllTabGroupsWithTitles() {
@@ -1143,6 +1156,28 @@ async function syncAllTabGroupsWithTitles() {
       await chrome.tabGroups.update(groupId, { title: host });
     } catch (error) {
       console.warn(`Failed to sync group title for bucket "${bucketKey}" (${host}):`, error);
+    }
+  }
+}
+
+async function applyHostMappingToExistingGroups() {
+  const supportedHosts = await getSupportedHosts();
+  const groups = await chrome.tabGroups.query({});
+
+  for (const group of groups) {
+    const tabs = await chrome.tabs.query({ groupId: group.id });
+    if (tabs.length === 0) continue;
+
+    const firstTab = tabs.find(t => t.url && t.url.startsWith('http'));
+    if (!firstTab) continue;
+
+    const newTitle = mapUrlToHost(firstTab.url, supportedHosts);
+    if (newTitle !== group.title) {
+      try {
+        await chrome.tabGroups.update(group.id, { title: newTitle });
+      } catch (e) {
+        console.warn(`Failed to rename group ${group.id} to "${newTitle}":`, e);
+      }
     }
   }
 }

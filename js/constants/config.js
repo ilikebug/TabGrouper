@@ -57,5 +57,6 @@ export const ACTIONS = {
   REFRESH_GROUPED_TABS: 'refreshGroupedTabs',
   SEARCH: 'search',
   GET_AUTO_COLLAPSE_SETTINGS: 'getAutoCollapseSettings',
-  UPDATE_AUTO_COLLAPSE_SETTINGS: 'updateAutoCollapseSettings'
+  UPDATE_AUTO_COLLAPSE_SETTINGS: 'updateAutoCollapseSettings',
+  APPLY_HOST_MAPPING: 'applyHostMapping'
 };

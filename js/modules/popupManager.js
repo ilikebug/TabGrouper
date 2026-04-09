@@ -93,13 +93,33 @@ export class PopupManager {
   /**
    * Handle setting a new host
    */
+  normalizeHost(raw) {
+    const s = raw.trim();
+    try {
+      // If user pasted a full URL like "https://example.com/path", extract hostname
+      if (s.includes('://')) {
+        return new URL(s).hostname;
+      }
+      // Handle "//example.com"
+      if (s.startsWith('//')) {
+        return new URL('https:' + s).hostname;
+      }
+    } catch (e) {
+      // ignore parse error, fall through
+    }
+    // Plain hostname or hostname/path — strip trailing slash/path
+    return s.split('/')[0];
+  }
+
   async handleSetHost() {
-    const host = this.els.hostInput?.value.trim();
+    const rawHost = this.els.hostInput?.value.trim();
     const name = this.els.nameInput?.value.trim();
+    const host = rawHost ? this.normalizeHost(rawHost) : '';
 
     if (host && name) {
       this.supportedHosts[host] = name;
       await saveSupportedHosts(this.supportedHosts);
+      await this.applyHostMappingToGroups();
       this.displayHosts();
       this.showSuccessMessage();
       this.clearInputs();
@@ -228,7 +248,16 @@ export class PopupManager {
   async deleteHost(host) {
     delete this.supportedHosts[host];
     await saveSupportedHosts(this.supportedHosts);
+    await this.applyHostMappingToGroups();
     this.displayHosts();
+  }
+
+  async applyHostMappingToGroups() {
+    try {
+      await chrome.runtime.sendMessage({ action: ACTIONS.APPLY_HOST_MAPPING });
+    } catch (e) {
+      // SW may not respond; storage.onChanged will handle it as fallback
+    }
   }
 
   /**
