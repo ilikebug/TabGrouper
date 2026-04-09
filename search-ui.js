@@ -3,6 +3,26 @@
 // Injected into page context via chrome.scripting.executeScript({ function: tabGrouper, args: [...] }).
 // Must be self-contained: no imports, no external references.
 
+function teardownSearchBox(searchBox) {
+  if (!searchBox) {
+    return;
+  }
+
+  const activeElement = document.activeElement;
+  if (activeElement && searchBox.contains(activeElement)) {
+    activeElement.blur();
+  }
+
+  if (searchBox._cleanup) {
+    searchBox._cleanup();
+  }
+
+  searchBox.remove();
+  document.body.focus();
+  document.body.style.overflow = '';
+  document.documentElement.style.overflow = '';
+}
+
 // Tab grouper main function - will be injected as content script
 // This function will be stringified and injected, so it must be self-contained
 function tabGrouper(bookmarkTreeNodes, alltabs) {
@@ -681,10 +701,30 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     }
   }
 
+  function hostnameMatches(hostname, supportedHost) {
+    if (!hostname || !supportedHost) {
+      return false;
+    }
+
+    const normalizedHostname = hostname.toLowerCase();
+    const normalizedSupportedHost = supportedHost.toLowerCase();
+
+    return normalizedHostname === normalizedSupportedHost ||
+      normalizedHostname.endsWith(`.${normalizedSupportedHost}`);
+  }
+
   function mapUrlToHost(url, supportedHosts = {}) {
     let host = extractHostFromUrl(url);
+    let hostname = '';
+
+    try {
+      hostname = new URL(url).hostname;
+    } catch (e) {
+      hostname = '';
+    }
+
     for (const [key, value] of Object.entries(supportedHosts)) {
-      if (url.includes(key)) {
+      if (hostnameMatches(hostname, key)) {
         host = value;
         break;
       }
@@ -2296,16 +2336,8 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     if (activeElement && existingBox.contains(activeElement)) {
       activeElement.blur();
     }
-    
-    // Remove the interface
-    existingBox.remove();
-    
-    // Restore focus to document body to prevent cursor blinking
-    document.body.focus();
-    
-    // Re-enable page scrolling
-    document.body.style.overflow = '';
-    document.documentElement.style.overflow = '';
+
+    teardownSearchBox(existingBox);
   } else {
     createSearchBox(bookmarkTreeNodes, alltabs);
   }

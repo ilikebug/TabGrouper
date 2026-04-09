@@ -383,10 +383,30 @@ function extractHostFromUrl(url) {
   }
 }
 
+function hostnameMatches(hostname, supportedHost) {
+  if (!hostname || !supportedHost) {
+    return false;
+  }
+
+  const normalizedHostname = hostname.toLowerCase();
+  const normalizedSupportedHost = supportedHost.toLowerCase();
+
+  return normalizedHostname === normalizedSupportedHost ||
+    normalizedHostname.endsWith(`.${normalizedSupportedHost}`);
+}
+
 function mapUrlToHost(url, supportedHosts = {}) {
   let host = extractHostFromUrl(url);
+  let hostname = '';
+
+  try {
+    hostname = new URL(url).hostname;
+  } catch (e) {
+    hostname = '';
+  }
+
   for (const [key, value] of Object.entries(supportedHosts)) {
-    if (url.includes(key)) {
+    if (hostnameMatches(hostname, key)) {
       host = value;
       break;
     }
@@ -394,21 +414,48 @@ function mapUrlToHost(url, supportedHosts = {}) {
   return host;
 }
 
-async function groupTabsByHost(tabs) {
+function findExistingGroupInWindow(groups, host, windowId) {
+  return groups.find(group =>
+    group?.title === host &&
+    Number(group?.windowId) === Number(windowId)
+  ) || null;
+}
+
+function groupTabsByWindowAndHost(tabs, supportedHosts = {}) {
   const groupedTabs = {};
-  const supportedHosts = await getSupportedHosts();
 
   for (const tab of tabs) {
     try {
       const host = mapUrlToHost(tab.url, supportedHosts);
+      const bucketKey = `${tab.windowId}::${host}`;
       
-      if (!groupedTabs[host]) {
-        groupedTabs[host] = [];
+      if (!groupedTabs[bucketKey]) {
+        groupedTabs[bucketKey] = [];
       }
-      groupedTabs[host].push(tab);
+      groupedTabs[bucketKey].push(tab);
     } catch (e) {
       console.warn('Error processing tab:', tab.url, e);
     }
+  }
+
+  return groupedTabs;
+}
+
+async function groupTabsByHost(tabs) {
+  const supportedHosts = await getSupportedHosts();
+  const groupedByWindowAndHost = groupTabsByWindowAndHost(tabs, supportedHosts);
+  const groupedTabs = {};
+
+  for (const tabsForBucket of Object.values(groupedByWindowAndHost)) {
+    if (tabsForBucket.length === 0) {
+      continue;
+    }
+
+    const host = mapUrlToHost(tabsForBucket[0].url, supportedHosts);
+    if (!groupedTabs[host]) {
+      groupedTabs[host] = [];
+    }
+    groupedTabs[host].push(...tabsForBucket);
   }
 
   return groupedTabs;
@@ -1046,12 +1093,14 @@ function handlePing(request, sender, sendResponse) {
 
 async function syncAllTabGroupsWithTitles() {
   const alltabs = await getAllTabs();
-  const groupedTabs = await groupTabsByHost(alltabs);
+  const supportedHosts = await getSupportedHosts();
+  const groupedTabs = groupTabsByWindowAndHost(alltabs, supportedHosts);
 
-  for (const [host, tabs] of Object.entries(groupedTabs)) {
+  for (const [bucketKey, tabs] of Object.entries(groupedTabs)) {
     const tabIds = tabs
       .map(tab => tab?.id)
       .filter(tabId => typeof tabId === 'number');
+    const host = mapUrlToHost(tabs[0]?.url, supportedHosts);
 
     if (tabIds.length === 0) {
       continue;
@@ -1061,7 +1110,7 @@ async function syncAllTabGroupsWithTitles() {
       const groupId = await chrome.tabs.group({ tabIds });
       await chrome.tabGroups.update(groupId, { title: host });
     } catch (error) {
-      console.warn(`Failed to sync group title for host "${host}":`, error);
+      console.warn(`Failed to sync group title for bucket "${bucketKey}" (${host}):`, error);
     }
   }
 }
@@ -1124,7 +1173,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     const host = mapUrlToHost(tab.url, supportedHosts);
 
     const groups = await chrome.tabGroups.query({});
-    const existingGroup = groups.find(group => group.title === host);
+    const existingGroup = findExistingGroupInWindow(groups, host, tab.windowId);
 
     if (existingGroup) {
       await chrome.tabs.group({ tabIds: [tabId], groupId: existingGroup.id });

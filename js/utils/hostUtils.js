@@ -21,6 +21,24 @@ export function extractHostFromUrl(url) {
 }
 
 /**
+ * Checks whether a hostname matches a supported host key exactly or as a subdomain.
+ * @param {string} hostname - The hostname to check.
+ * @param {string} supportedHost - The supported host key.
+ * @returns {boolean} - True when the hostname belongs to the supported host.
+ */
+export function hostnameMatches(hostname, supportedHost) {
+  if (!hostname || !supportedHost) {
+    return false;
+  }
+
+  const normalizedHostname = hostname.toLowerCase();
+  const normalizedSupportedHost = supportedHost.toLowerCase();
+
+  return normalizedHostname === normalizedSupportedHost ||
+    normalizedHostname.endsWith(`.${normalizedSupportedHost}`);
+}
+
+/**
  * Maps URL to custom host name based on supported hosts configuration
  * @param {string} url - The URL to check
  * @param {Object} supportedHosts - The supported hosts mapping
@@ -30,8 +48,15 @@ export function mapUrlToHost(url, supportedHosts = {}) {
   let host = extractHostFromUrl(url);
   
   if (supportedHosts) {
+    let hostname = '';
+    try {
+      hostname = new URL(url).hostname;
+    } catch (e) {
+      hostname = '';
+    }
+
     for (const [key, value] of Object.entries(supportedHosts)) {
-      if (url.includes(key)) {
+      if (hostnameMatches(hostname, key)) {
         host = value;
         break;
       }
