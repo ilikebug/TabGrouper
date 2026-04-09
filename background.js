@@ -70,7 +70,13 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 // Invalidate in-memory caches when storage is updated externally
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
-  if (changes[CONFIG.STORAGE_KEYS.SUPPORTED_HOSTS]) supportedHostsCache = null;
+  if (changes[CONFIG.STORAGE_KEYS.SUPPORTED_HOSTS]) {
+    supportedHostsCache = null;
+    // Re-sync all tab groups so existing tabs pick up the new host mapping
+    syncAllTabGroupsWithTitles().catch(err =>
+      console.error('Error re-syncing tab groups after host mapping change:', err)
+    );
+  }
   if (changes[CONFIG.STORAGE_KEYS.TAB_ACTIVITY]) { tabActivityCache = null; tabActivityLoadPromise = null; }
   if (changes[CONFIG.STORAGE_KEYS.RECENT_TABS]) recentTabsCache = null;
 });

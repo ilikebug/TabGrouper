@@ -18,6 +18,7 @@ export const CONFIG = {
   
   STORAGE_KEYS: {
     SUPPORTED_HOSTS: 'supportedHosts',
+    RECENT_TABS: 'recentTabs',
     AUTO_COLLAPSE_SETTINGS: 'autoCollapseSettings',
     TAB_ACTIVITY: 'tabActivity'
   },
