@@ -707,26 +707,104 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     }
 
     const normalizedHostname = hostname.toLowerCase();
-    const normalizedSupportedHost = supportedHost.toLowerCase();
+    const parsedSupportedHost = parseSupportedHostKey(supportedHost);
+    if (!parsedSupportedHost) {
+      return false;
+    }
+    const normalizedSupportedHost = parsedSupportedHost.hostname;
 
     return normalizedHostname === normalizedSupportedHost ||
       normalizedHostname.endsWith(`.${normalizedSupportedHost}`);
   }
 
-  function mapUrlToHost(url, supportedHosts = {}) {
-    let host = extractHostFromUrl(url);
-    let hostname = '';
-
-    try {
-      hostname = new URL(url).hostname;
-    } catch (e) {
-      hostname = '';
+  function normalizePathname(pathname) {
+    let normalizedPathname = pathname || '/';
+    if (!normalizedPathname.startsWith('/')) {
+      normalizedPathname = `/${normalizedPathname}`;
     }
 
-    for (const [key, value] of Object.entries(supportedHosts)) {
-      if (hostnameMatches(hostname, key)) {
-        host = value;
-        break;
+    while (normalizedPathname.length > 1 && normalizedPathname.endsWith('/')) {
+      normalizedPathname = normalizedPathname.slice(0, -1);
+    }
+
+    return normalizedPathname;
+  }
+
+  function parseSupportedHostKey(supportedHost) {
+    const key = String(supportedHost || '').trim();
+    if (!key) {
+      return null;
+    }
+
+    const candidate = key.startsWith('//')
+      ? `https:${key}`
+      : key.includes('://')
+        ? key
+        : `https://${key}`;
+
+    try {
+      const url = new URL(candidate);
+      const pathname = normalizePathname(url.pathname);
+      return {
+        hostname: url.hostname.toLowerCase(),
+        pathname: pathname === '/' ? '' : pathname
+      };
+    } catch (e) {
+      return {
+        hostname: key.toLowerCase(),
+        pathname: ''
+      };
+    }
+  }
+
+  function pathnameMatches(pathname, supportedPathname) {
+    if (!supportedPathname) {
+      return true;
+    }
+
+    const normalizedPathname = normalizePathname(pathname);
+    return normalizedPathname === supportedPathname ||
+      normalizedPathname.startsWith(`${supportedPathname}/`);
+  }
+
+  function hostMappingMatches(urlObj, supportedHost) {
+    const parsedSupportedHost = parseSupportedHostKey(supportedHost);
+    if (!parsedSupportedHost) {
+      return false;
+    }
+
+    return hostnameMatches(urlObj.hostname, parsedSupportedHost.hostname) &&
+      pathnameMatches(urlObj.pathname, parsedSupportedHost.pathname);
+  }
+
+  function getHostMappingSpecificity(supportedHost) {
+    const parsedSupportedHost = parseSupportedHostKey(supportedHost);
+    if (!parsedSupportedHost) {
+      return 0;
+    }
+
+    return parsedSupportedHost.hostname.length + parsedSupportedHost.pathname.length;
+  }
+
+  function mapUrlToHost(url, supportedHosts = {}) {
+    let host = extractHostFromUrl(url);
+    let urlObj = null;
+
+    try {
+      urlObj = new URL(url);
+    } catch (e) {
+      urlObj = null;
+    }
+
+    if (urlObj) {
+      const entries = Object.entries(supportedHosts)
+        .sort(([a], [b]) => getHostMappingSpecificity(b) - getHostMappingSpecificity(a));
+
+      for (const [key, value] of entries) {
+        if (hostMappingMatches(urlObj, key)) {
+          host = value;
+          break;
+        }
       }
     }
     return host;

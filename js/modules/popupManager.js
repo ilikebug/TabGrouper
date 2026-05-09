@@ -94,21 +94,7 @@ export class PopupManager {
    * Handle setting a new host
    */
   normalizeHost(raw) {
-    const s = raw.trim();
-    try {
-      // If user pasted a full URL like "https://example.com/path", extract hostname
-      if (s.includes('://')) {
-        return new URL(s).hostname;
-      }
-      // Handle "//example.com"
-      if (s.startsWith('//')) {
-        return new URL('https:' + s).hostname;
-      }
-    } catch (e) {
-      // ignore parse error, fall through
-    }
-    // Plain hostname or hostname/path — strip trailing slash/path
-    return s.split('/')[0];
+    return raw.trim();
   }
 
   async handleSetHost() {

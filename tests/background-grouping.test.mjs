@@ -168,10 +168,57 @@ function loadSearchUiTeardownHelper() {
   return context.__teardownSearchBox__;
 }
 
+function loadPopupManager() {
+  const filePath = path.join(repoRoot, 'js/modules/popupManager.js');
+  const source = fs.readFileSync(filePath, 'utf8')
+    .replace(/^import .*$/mg, '')
+    .replace(/^export /mg, '');
+
+  const context = vm.createContext({
+    console,
+    setTimeout,
+    document: {
+      getElementById: () => null
+    },
+    chrome: {
+      runtime: {
+        sendMessage: async () => undefined
+      },
+      commands: {
+        getAll: async () => []
+      }
+    },
+    CONFIG: {
+      CSS_CLASSES: {},
+      DEFAULT_ICONS: {},
+      UI: {
+        MESSAGE_HIDE_DELAY: 0
+      }
+    },
+    ACTIONS: {},
+    getSupportedHosts: async () => ({}),
+    saveSupportedHosts: async () => undefined
+  });
+
+  vm.runInContext(`${source}\nthis.PopupManager = PopupManager;`, context, { filename: 'popupManager.js' });
+  return context.PopupManager;
+}
+
 const hostUtils = loadHostUtils();
 const background = loadBackground();
 const searchUiHostHelpers = loadSearchUiHostHelpers();
 const teardownSearchBox = loadSearchUiTeardownHelper();
+const PopupManager = loadPopupManager();
+
+assert.equal(
+  PopupManager.prototype.normalizeHost('https://example.com/docs/api?tab=1'),
+  'https://example.com/docs/api?tab=1'
+);
+
+assert.equal(
+  PopupManager.prototype.normalizeHost('  example.com/docs/api  '),
+  'example.com/docs/api'
+);
 
 assert.equal(
   hostUtils.mapUrlToHost('https://example.com/?next=github.com', { 'github.com': 'GitHub' }),
@@ -181,6 +228,27 @@ assert.equal(
 assert.equal(
   hostUtils.mapUrlToHost('https://docs.github.com/en', { 'github.com': 'GitHub' }),
   'GitHub'
+);
+
+assert.equal(
+  hostUtils.mapUrlToHost('https://example.com/docs/page', {
+    'example.com': 'Example',
+    'example.com/docs': 'Docs'
+  }),
+  'Docs'
+);
+
+assert.equal(
+  hostUtils.mapUrlToHost('https://example.com/docs2/page', { 'example.com/docs': 'Docs' }),
+  'example'
+);
+
+assert.equal(
+  hostUtils.mapUrlToHost('https://example.com/app/page', {
+    'https://example.com/docs': 'Docs',
+    'https://example.com/app': 'App'
+  }),
+  'App'
 );
 
 assert.equal(
@@ -194,6 +262,27 @@ assert.equal(
 );
 
 assert.equal(
+  background.mapUrlToHost('https://example.com/docs/page', {
+    'example.com': 'Example',
+    'example.com/docs': 'Docs'
+  }),
+  'Docs'
+);
+
+assert.equal(
+  background.mapUrlToHost('https://example.com/docs2/page', { 'example.com/docs': 'Docs' }),
+  'example'
+);
+
+assert.equal(
+  background.mapUrlToHost('https://example.com/app/page', {
+    'https://example.com/docs': 'Docs',
+    'https://example.com/app': 'App'
+  }),
+  'App'
+);
+
+assert.equal(
   searchUiHostHelpers.mapUrlToHost('https://example.com/?next=github.com', { 'github.com': 'GitHub' }),
   'example'
 );
@@ -201,6 +290,27 @@ assert.equal(
 assert.equal(
   searchUiHostHelpers.mapUrlToHost('https://docs.github.com/en', { 'github.com': 'GitHub' }),
   'GitHub'
+);
+
+assert.equal(
+  searchUiHostHelpers.mapUrlToHost('https://example.com/docs/page', {
+    'example.com': 'Example',
+    'example.com/docs': 'Docs'
+  }),
+  'Docs'
+);
+
+assert.equal(
+  searchUiHostHelpers.mapUrlToHost('https://example.com/docs2/page', { 'example.com/docs': 'Docs' }),
+  'example'
+);
+
+assert.equal(
+  searchUiHostHelpers.mapUrlToHost('https://example.com/app/page', {
+    'https://example.com/docs': 'Docs',
+    'https://example.com/app': 'App'
+  }),
+  'App'
 );
 
 assert.deepEqual(
