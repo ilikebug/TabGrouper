@@ -31,11 +31,19 @@ export function hostnameMatches(hostname, supportedHost) {
     return false;
   }
 
-  const normalizedHostname = hostname.toLowerCase();
   const parsedSupportedHost = parseSupportedHostKey(supportedHost);
   if (!parsedSupportedHost) {
     return false;
   }
+  return hostnameMatchesParsed(hostname, parsedSupportedHost);
+}
+
+function hostnameMatchesParsed(hostname, parsedSupportedHost) {
+  if (!hostname || !parsedSupportedHost?.hostname) {
+    return false;
+  }
+
+  const normalizedHostname = hostname.toLowerCase();
   const normalizedSupportedHost = parsedSupportedHost.hostname;
 
   return normalizedHostname === normalizedSupportedHost ||
@@ -92,14 +100,13 @@ function pathnameMatches(pathname, supportedPathname) {
     normalizedPathname.startsWith(`${supportedPathname}/`);
 }
 
-function hostMappingMatches(urlObj, supportedHost) {
-  const parsedSupportedHost = parseSupportedHostKey(supportedHost);
-  if (!parsedSupportedHost) {
+function hostMappingMatches(urlObj, mapping) {
+  if (!mapping) {
     return false;
   }
 
-  return hostnameMatches(urlObj.hostname, parsedSupportedHost.hostname) &&
-    pathnameMatches(urlObj.pathname, parsedSupportedHost.pathname);
+  return hostnameMatchesParsed(urlObj.hostname, mapping) &&
+    pathnameMatches(urlObj.pathname, mapping.pathname);
 }
 
 function getHostMappingSpecificity(supportedHost) {
@@ -109,6 +116,35 @@ function getHostMappingSpecificity(supportedHost) {
   }
 
   return parsedSupportedHost.hostname.length + parsedSupportedHost.pathname.length;
+}
+
+let sortedHostMappingsCache = null;
+let sortedHostMappingsSource = null;
+
+function getSortedHostMappings(supportedHosts = {}) {
+  if (sortedHostMappingsSource === supportedHosts && sortedHostMappingsCache !== null) {
+    return sortedHostMappingsCache;
+  }
+
+  sortedHostMappingsSource = supportedHosts;
+  sortedHostMappingsCache = Object.entries(supportedHosts)
+    .map(([key, value]) => {
+      const parsed = parseSupportedHostKey(key);
+      if (!parsed) {
+        return null;
+      }
+      return {
+        key,
+        value,
+        hostname: parsed.hostname,
+        pathname: parsed.pathname,
+        specificity: parsed.hostname.length + parsed.pathname.length
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.specificity - a.specificity);
+
+  return sortedHostMappingsCache;
 }
 
 /**
@@ -129,12 +165,9 @@ export function mapUrlToHost(url, supportedHosts = {}) {
     }
 
     if (urlObj) {
-      const entries = Object.entries(supportedHosts)
-        .sort(([a], [b]) => getHostMappingSpecificity(b) - getHostMappingSpecificity(a));
-
-      for (const [key, value] of entries) {
-        if (hostMappingMatches(urlObj, key)) {
-          host = value;
+      for (const mapping of getSortedHostMappings(supportedHosts)) {
+        if (hostMappingMatches(urlObj, mapping)) {
+          host = mapping.value;
           break;
         }
       }

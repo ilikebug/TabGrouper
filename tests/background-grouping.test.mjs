@@ -7,10 +7,54 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function makeEvent() {
-  return { addListener() {} };
+  const listeners = [];
+  return {
+    addListener(listener) {
+      listeners.push(listener);
+    },
+    async emit(...args) {
+      await Promise.all(listeners.map(listener => listener(...args)));
+    }
+  };
 }
 
-function makeChromeStub() {
+function makeStorageArea(initialData = {}, onChangedEvent = null, areaName = 'local') {
+  const data = { ...initialData };
+  const setCalls = [];
+  const getCalls = [];
+
+  return {
+    data,
+    setCalls,
+    getCalls,
+    async get(key) {
+      getCalls.push(key);
+      if (Array.isArray(key)) {
+        return Object.fromEntries(key.map(k => [k, data[k]]));
+      }
+      if (typeof key === 'string') {
+        return { [key]: data[key] };
+      }
+      if (key && typeof key === 'object') {
+        return Object.fromEntries(Object.keys(key).map(k => [k, data[k] ?? key[k]]));
+      }
+      return { ...data };
+    },
+    async set(values) {
+      setCalls.push(values);
+      const changes = {};
+      for (const [key, value] of Object.entries(values)) {
+        changes[key] = { oldValue: data[key], newValue: value };
+        data[key] = value;
+      }
+      if (onChangedEvent) {
+        await onChangedEvent.emit(changes, areaName);
+      }
+    }
+  };
+}
+
+function makeChromeStub(initialStorage = {}) {
   const tabs = {
     query: async () => [],
     update: async () => ({}),
@@ -20,10 +64,9 @@ function makeChromeStub() {
     create: async () => ({})
   };
 
-  const storageArea = {
-    get: async () => ({}),
-    set: async () => undefined
-  };
+  const storageOnChanged = makeEvent();
+  const localStorage = makeStorageArea(initialStorage.local, storageOnChanged, 'local');
+  const sessionStorage = makeStorageArea(initialStorage.session, storageOnChanged, 'session');
 
   return {
     alarms: {
@@ -33,9 +76,9 @@ function makeChromeStub() {
       get: async () => null
     },
     storage: {
-      onChanged: makeEvent(),
-      local: storageArea,
-      session: storageArea
+      onChanged: storageOnChanged,
+      local: localStorage,
+      session: sessionStorage
     },
     tabs: {
       ...tabs,
@@ -92,13 +135,13 @@ function loadHostUtils() {
   return context;
 }
 
-function loadBackground() {
+function loadBackground(initialStorage = {}) {
   const filePath = path.join(repoRoot, 'background.js');
   const source = fs.readFileSync(filePath, 'utf8');
   const context = vm.createContext({
     console,
     URL,
-    chrome: makeChromeStub(),
+    chrome: makeChromeStub(initialStorage),
     importScripts() {},
     setTimeout,
     clearTimeout,
@@ -168,6 +211,26 @@ function loadSearchUiTeardownHelper() {
   return context.__teardownSearchBox__;
 }
 
+function loadSearchUiRenderHelpers() {
+  const filePath = path.join(repoRoot, 'search-ui.js');
+  const source = fs.readFileSync(filePath, 'utf8');
+  const start = source.indexOf('function limitGroupedTabsForRender(groupedTabs, maxTabs) {');
+  const end = source.indexOf('// Tab grouper main function - will be injected as content script');
+
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error('Unable to locate render helper in search-ui.js');
+  }
+
+  const helperSource = source.slice(start, end);
+  const context = vm.createContext({});
+
+  vm.runInContext(`${helperSource}\nthis.__renderHelpers__ = { limitGroupedTabsForRender };`, context, {
+    filename: 'search-ui.render-helpers.vm'
+  });
+
+  return context.__renderHelpers__;
+}
+
 function loadPopupManager() {
   const filePath = path.join(repoRoot, 'js/modules/popupManager.js');
   const source = fs.readFileSync(filePath, 'utf8')
@@ -208,6 +271,7 @@ const hostUtils = loadHostUtils();
 const background = loadBackground();
 const searchUiHostHelpers = loadSearchUiHostHelpers();
 const teardownSearchBox = loadSearchUiTeardownHelper();
+const searchUiRenderHelpers = loadSearchUiRenderHelpers();
 const PopupManager = loadPopupManager();
 
 assert.equal(
@@ -346,6 +410,99 @@ assert.deepEqual(
     '20::github': [{ id: 2, url: 'https://github.com/b', windowId: 20 }]
   }
 );
+
+assert.deepEqual(
+  JSON.parse(JSON.stringify(searchUiRenderHelpers.limitGroupedTabsForRender({
+    alpha: [{ id: 1 }, { id: 2 }],
+    beta: [{ id: 3 }, { id: 4 }],
+    gamma: [{ id: 5 }]
+  }, 3))),
+  {
+    groupedTabs: {
+      alpha: [{ id: 1 }, { id: 2 }],
+      beta: [{ id: 3 }]
+    },
+    renderedTabs: 3,
+    totalTabs: 5,
+    truncated: true
+  }
+);
+
+function makeRecentTab(index, timestamp = Date.now()) {
+  return {
+    id: index,
+    title: `Tab ${index}`,
+    url: `https://example.com/page/${index}`,
+    favicon: `https://example.com/favicon-${index}.ico`,
+    timestamp
+  };
+}
+
+{
+  const manyRecentTabs = Array.from({ length: 250 }, (_, index) => makeRecentTab(index));
+  const context = loadBackground({
+    local: {
+      recentTabs: manyRecentTabs
+    }
+  });
+
+  await context.addToRecentTabs({
+    id: 999,
+    title: 'Newest',
+    url: 'https://new.example.com/',
+    favIconUrl: 'https://new.example.com/favicon.ico'
+  });
+
+  assert.equal(context.chrome.storage.local.data.recentTabs.length, 200);
+  assert.equal(context.chrome.storage.local.data.recentTabs[0].url, 'https://new.example.com/');
+}
+
+{
+  const now = Date.now();
+  const context = loadBackground({
+    local: {
+      recentTabs: [
+        {
+          id: 1,
+          title: 'Existing',
+          url: 'https://same.example.com/',
+          favicon: 'https://same.example.com/favicon.ico',
+          timestamp: now
+        }
+      ]
+    }
+  });
+
+  await context.addToRecentTabs({
+    id: 1,
+    title: 'Existing',
+    url: 'https://same.example.com/',
+    favIconUrl: 'https://same.example.com/favicon.ico'
+  });
+
+  const recentTabWrites = context.chrome.storage.local.setCalls
+    .filter(call => Object.prototype.hasOwnProperty.call(call, 'recentTabs'));
+  assert.equal(recentTabWrites.length, 0);
+}
+
+{
+  const context = loadBackground();
+
+  await Promise.all([
+    context.updateTabActivity(1, 1000),
+    context.updateTabActivity(2, 1000),
+    context.updateTabActivity(3, 1000)
+  ]);
+
+  const activityWrites = context.chrome.storage.local.setCalls
+    .filter(call => Object.prototype.hasOwnProperty.call(call, 'tabActivity'));
+  assert.equal(activityWrites.length, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(context.chrome.storage.local.data.tabActivity)), {
+    1: 1000,
+    2: 1000,
+    3: 1000
+  });
+}
 
 {
   const activeElement = {

@@ -27,6 +27,16 @@ const CONFIG = {
     MIN_TIMEOUT_MINUTES: 1,
     MAX_TIMEOUT_MINUTES: 60
   },
+
+  RECENT_TABS: {
+    MAX_ITEMS: 200,
+    MAX_AGE_MS: 24 * 60 * 60 * 1000,
+    WRITE_DEDUP_MS: 60 * 1000
+  },
+
+  TAB_ACTIVITY: {
+    FLUSH_DELAY_MS: 250
+  },
   
   DEFAULT_ICONS: {
     FOLDER: '📂',
@@ -72,14 +82,21 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (changes[CONFIG.STORAGE_KEYS.SUPPORTED_HOSTS]) {
-    supportedHostsCache = null;
+    supportedHostsCache = changes[CONFIG.STORAGE_KEYS.SUPPORTED_HOSTS].newValue || {};
+    sortedHostMappingsCache = null;
+    sortedHostMappingsSource = null;
     // Rename existing tab groups to reflect the updated host mapping
     applyHostMappingToExistingGroups().catch(err =>
       console.error('Error applying host mapping to existing groups:', err)
     );
   }
-  if (changes[CONFIG.STORAGE_KEYS.TAB_ACTIVITY]) { tabActivityCache = null; tabActivityLoadPromise = null; }
-  if (changes[CONFIG.STORAGE_KEYS.RECENT_TABS]) recentTabsCache = null;
+  if (changes[CONFIG.STORAGE_KEYS.TAB_ACTIVITY]) {
+    tabActivityCache = changes[CONFIG.STORAGE_KEYS.TAB_ACTIVITY].newValue || {};
+    tabActivityLoadPromise = null;
+  }
+  if (changes[CONFIG.STORAGE_KEYS.RECENT_TABS]) {
+    recentTabsCache = pruneRecentTabs(changes[CONFIG.STORAGE_KEYS.RECENT_TABS].newValue || []);
+  }
 });
 
 async function getAutoCollapseSettings() {
@@ -110,6 +127,9 @@ async function saveAutoCollapseSettings(settings) {
 
 let tabActivityCache = null;
 let tabActivityLoadPromise = null;
+let tabActivityFlushPromise = null;
+let tabActivityFlushTimer = null;
+let tabActivityDirty = false;
 
 async function getTabActivity() {
   if (tabActivityCache !== null) return tabActivityCache;
@@ -133,7 +153,8 @@ async function updateTabActivity(tabId, timestamp = Date.now()) {
   try {
     const tabActivity = await getTabActivity();
     tabActivity[tabId] = timestamp;
-    await chrome.storage.local.set({ [CONFIG.STORAGE_KEYS.TAB_ACTIVITY]: tabActivity });
+    tabActivityDirty = true;
+    await scheduleTabActivityFlush();
   } catch (error) {
     console.error('Error updating tab activity:', error);
   }
@@ -143,10 +164,35 @@ async function removeTabActivity(tabId) {
   try {
     const tabActivity = await getTabActivity();
     delete tabActivity[tabId];
-    await chrome.storage.local.set({ [CONFIG.STORAGE_KEYS.TAB_ACTIVITY]: tabActivity });
+    tabActivityDirty = true;
+    await scheduleTabActivityFlush();
   } catch (error) {
     console.error('Error removing tab activity:', error);
   }
+}
+
+function scheduleTabActivityFlush() {
+  if (tabActivityFlushPromise) return tabActivityFlushPromise;
+
+  tabActivityFlushPromise = new Promise(resolve => {
+    tabActivityFlushTimer = setTimeout(async () => {
+      tabActivityFlushTimer = null;
+      try {
+        if (tabActivityDirty && tabActivityCache !== null) {
+          tabActivityDirty = false;
+          await chrome.storage.local.set({ [CONFIG.STORAGE_KEYS.TAB_ACTIVITY]: tabActivityCache });
+        }
+      } catch (error) {
+        tabActivityDirty = true;
+        console.error('Error flushing tab activity:', error);
+      } finally {
+        tabActivityFlushPromise = null;
+        resolve();
+      }
+    }, CONFIG.TAB_ACTIVITY.FLUSH_DELAY_MS);
+  });
+
+  return tabActivityFlushPromise;
 }
 
 async function checkInactiveTabGroups() {
@@ -363,6 +409,9 @@ async function ensureAutoCollapseActive() {
 
 // Utility functions
 let supportedHostsCache = null;
+let sortedHostMappingsCache = null;
+let sortedHostMappingsSource = null;
+
 async function getSupportedHosts() {
   if (supportedHostsCache !== null) return supportedHostsCache;
   try {
@@ -395,11 +444,19 @@ function hostnameMatches(hostname, supportedHost) {
     return false;
   }
 
-  const normalizedHostname = hostname.toLowerCase();
   const parsedSupportedHost = parseSupportedHostKey(supportedHost);
   if (!parsedSupportedHost) {
     return false;
   }
+  return hostnameMatchesParsed(hostname, parsedSupportedHost);
+}
+
+function hostnameMatchesParsed(hostname, parsedSupportedHost) {
+  if (!hostname || !parsedSupportedHost?.hostname) {
+    return false;
+  }
+
+  const normalizedHostname = hostname.toLowerCase();
   const normalizedSupportedHost = parsedSupportedHost.hostname;
 
   return normalizedHostname === normalizedSupportedHost ||
@@ -456,14 +513,13 @@ function pathnameMatches(pathname, supportedPathname) {
     normalizedPathname.startsWith(`${supportedPathname}/`);
 }
 
-function hostMappingMatches(urlObj, supportedHost) {
-  const parsedSupportedHost = parseSupportedHostKey(supportedHost);
-  if (!parsedSupportedHost) {
+function hostMappingMatches(urlObj, mapping) {
+  if (!mapping) {
     return false;
   }
 
-  return hostnameMatches(urlObj.hostname, parsedSupportedHost.hostname) &&
-    pathnameMatches(urlObj.pathname, parsedSupportedHost.pathname);
+  return hostnameMatchesParsed(urlObj.hostname, mapping) &&
+    pathnameMatches(urlObj.pathname, mapping.pathname);
 }
 
 function getHostMappingSpecificity(supportedHost) {
@@ -473,6 +529,32 @@ function getHostMappingSpecificity(supportedHost) {
   }
 
   return parsedSupportedHost.hostname.length + parsedSupportedHost.pathname.length;
+}
+
+function getSortedHostMappings(supportedHosts = {}) {
+  if (sortedHostMappingsSource === supportedHosts && sortedHostMappingsCache !== null) {
+    return sortedHostMappingsCache;
+  }
+
+  sortedHostMappingsSource = supportedHosts;
+  sortedHostMappingsCache = Object.entries(supportedHosts)
+    .map(([key, value]) => {
+      const parsed = parseSupportedHostKey(key);
+      if (!parsed) {
+        return null;
+      }
+      return {
+        key,
+        value,
+        hostname: parsed.hostname,
+        pathname: parsed.pathname,
+        specificity: parsed.hostname.length + parsed.pathname.length
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.specificity - a.specificity);
+
+  return sortedHostMappingsCache;
 }
 
 function mapUrlToHost(url, supportedHosts = {}) {
@@ -486,12 +568,9 @@ function mapUrlToHost(url, supportedHosts = {}) {
   }
 
   if (urlObj) {
-    const entries = Object.entries(supportedHosts)
-      .sort(([a], [b]) => getHostMappingSpecificity(b) - getHostMappingSpecificity(a));
-
-    for (const [key, value] of entries) {
-      if (hostMappingMatches(urlObj, key)) {
-        host = value;
+    for (const mapping of getSortedHostMappings(supportedHosts)) {
+      if (hostMappingMatches(urlObj, mapping)) {
+        host = mapping.value;
         break;
       }
     }
@@ -671,19 +750,36 @@ function getBookmarkPathFromMap(bookmarkId, nodeMap) {
 // Recent tabs functions - truly global scope
 let recentTabsCache = null;
 
+function pruneRecentTabs(tabs, now = Date.now()) {
+  const cutoff = now - CONFIG.RECENT_TABS.MAX_AGE_MS;
+  const seenUrls = new Set();
+  const prunedTabs = [];
+
+  for (const tab of tabs || []) {
+    if (!tab?.url || !tab.timestamp || tab.timestamp <= cutoff || seenUrls.has(tab.url)) {
+      continue;
+    }
+
+    seenUrls.add(tab.url);
+    prunedTabs.push(tab);
+
+    if (prunedTabs.length >= CONFIG.RECENT_TABS.MAX_ITEMS) {
+      break;
+    }
+  }
+
+  return prunedTabs;
+}
+
 async function getRecentTabs() {
   if (recentTabsCache !== null) {
-    const now = Date.now();
-    const twentyFourHoursAgo = now - (24 * 60 * 60 * 1000);
-    recentTabsCache = recentTabsCache.filter(tab => tab.timestamp > twentyFourHoursAgo);
+    recentTabsCache = pruneRecentTabs(recentTabsCache);
     return recentTabsCache;
   }
   try {
     const result = await chrome.storage.local.get(CONFIG.STORAGE_KEYS.RECENT_TABS);
     const allTabs = result[CONFIG.STORAGE_KEYS.RECENT_TABS] || [];
-    const now = Date.now();
-    const twentyFourHoursAgo = now - (24 * 60 * 60 * 1000);
-    recentTabsCache = allTabs.filter(tab => tab.timestamp > twentyFourHoursAgo);
+    recentTabsCache = pruneRecentTabs(allTabs);
     if (recentTabsCache.length !== allTabs.length) {
       await chrome.storage.local.set({ [CONFIG.STORAGE_KEYS.RECENT_TABS]: recentTabsCache });
     }
@@ -697,18 +793,27 @@ async function getRecentTabs() {
 
 async function addToRecentTabs(tab) {
   try {
+    const now = Date.now();
     const recentTabs = await getRecentTabs();
+    const currentFirst = recentTabs[0];
+    if (
+      currentFirst?.url === tab.url &&
+      now - currentFirst.timestamp < CONFIG.RECENT_TABS.WRITE_DEDUP_MS
+    ) {
+      return;
+    }
+
     const filteredTabs = recentTabs.filter(item => item.url !== tab.url);
     const newEntry = {
       id: tab.id,
       title: tab.title,
       url: tab.url,
       favicon: tab.favIconUrl,
-      timestamp: Date.now()
+      timestamp: now
     };
     filteredTabs.unshift(newEntry);
-    recentTabsCache = filteredTabs;
-    await chrome.storage.local.set({ [CONFIG.STORAGE_KEYS.RECENT_TABS]: filteredTabs });
+    recentTabsCache = pruneRecentTabs(filteredTabs, now);
+    await chrome.storage.local.set({ [CONFIG.STORAGE_KEYS.RECENT_TABS]: recentTabsCache });
   } catch (error) {
     console.error('Error adding to recent tabs:', error);
   }

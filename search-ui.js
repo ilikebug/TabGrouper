@@ -23,6 +23,33 @@ function teardownSearchBox(searchBox) {
   document.documentElement.style.overflow = '';
 }
 
+function limitGroupedTabsForRender(groupedTabs, maxTabs) {
+  const limitedGroups = {};
+  let renderedTabs = 0;
+  let totalTabs = 0;
+
+  for (const [host, tabs] of Object.entries(groupedTabs || {})) {
+    totalTabs += tabs.length;
+    if (renderedTabs >= maxTabs) {
+      continue;
+    }
+
+    const remainingSlots = maxTabs - renderedTabs;
+    const visibleTabs = tabs.slice(0, remainingSlots);
+    if (visibleTabs.length > 0) {
+      limitedGroups[host] = visibleTabs;
+      renderedTabs += visibleTabs.length;
+    }
+  }
+
+  return {
+    groupedTabs: limitedGroups,
+    renderedTabs,
+    totalTabs,
+    truncated: totalTabs > renderedTabs
+  };
+}
+
 // Tab grouper main function - will be injected as content script
 // This function will be stringified and injected, so it must be self-contained
 function tabGrouper(bookmarkTreeNodes, alltabs) {
@@ -34,7 +61,8 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     // All configuration and utilities must be defined within this function
   const CONFIG = {
     UI: {
-      SEARCH_BOX_ID: 'tab-grouper'
+      SEARCH_BOX_ID: 'tab-grouper',
+      MAX_RENDERED_TABS: 500
     },
     ICONS: [
       "🌟", "🚀", "📚", "🎨", "🎵", "📷", "💼", "🔧", "🔍", "🍀",
@@ -44,6 +72,11 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     STORAGE_KEYS: { 
       SUPPORTED_HOSTS: 'supportedHosts',
       RECENT_TABS: 'recentTabs'
+    },
+    RECENT_TABS: {
+      MAX_ITEMS: 200,
+      MAX_AGE_MS: 24 * 60 * 60 * 1000,
+      WRITE_DEDUP_MS: 60 * 1000
     },
     DEFAULT_ICONS: { FOLDER: '📂', BOOKMARK: '⭐️', SEARCH: '🔍', DELETE: '✖' }
   };
@@ -706,11 +739,19 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       return false;
     }
 
-    const normalizedHostname = hostname.toLowerCase();
     const parsedSupportedHost = parseSupportedHostKey(supportedHost);
     if (!parsedSupportedHost) {
       return false;
     }
+    return hostnameMatchesParsed(hostname, parsedSupportedHost);
+  }
+
+  function hostnameMatchesParsed(hostname, parsedSupportedHost) {
+    if (!hostname || !parsedSupportedHost?.hostname) {
+      return false;
+    }
+
+    const normalizedHostname = hostname.toLowerCase();
     const normalizedSupportedHost = parsedSupportedHost.hostname;
 
     return normalizedHostname === normalizedSupportedHost ||
@@ -767,14 +808,13 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
       normalizedPathname.startsWith(`${supportedPathname}/`);
   }
 
-  function hostMappingMatches(urlObj, supportedHost) {
-    const parsedSupportedHost = parseSupportedHostKey(supportedHost);
-    if (!parsedSupportedHost) {
+  function hostMappingMatches(urlObj, mapping) {
+    if (!mapping) {
       return false;
     }
 
-    return hostnameMatches(urlObj.hostname, parsedSupportedHost.hostname) &&
-      pathnameMatches(urlObj.pathname, parsedSupportedHost.pathname);
+    return hostnameMatchesParsed(urlObj.hostname, mapping) &&
+      pathnameMatches(urlObj.pathname, mapping.pathname);
   }
 
   function getHostMappingSpecificity(supportedHost) {
@@ -784,6 +824,35 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     }
 
     return parsedSupportedHost.hostname.length + parsedSupportedHost.pathname.length;
+  }
+
+  let sortedHostMappingsCache = null;
+  let sortedHostMappingsSource = null;
+
+  function getSortedHostMappings(supportedHosts = {}) {
+    if (sortedHostMappingsSource === supportedHosts && sortedHostMappingsCache !== null) {
+      return sortedHostMappingsCache;
+    }
+
+    sortedHostMappingsSource = supportedHosts;
+    sortedHostMappingsCache = Object.entries(supportedHosts)
+      .map(([key, value]) => {
+        const parsed = parseSupportedHostKey(key);
+        if (!parsed) {
+          return null;
+        }
+        return {
+          key,
+          value,
+          hostname: parsed.hostname,
+          pathname: parsed.pathname,
+          specificity: parsed.hostname.length + parsed.pathname.length
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.specificity - a.specificity);
+
+    return sortedHostMappingsCache;
   }
 
   function mapUrlToHost(url, supportedHosts = {}) {
@@ -797,12 +866,9 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     }
 
     if (urlObj) {
-      const entries = Object.entries(supportedHosts)
-        .sort(([a], [b]) => getHostMappingSpecificity(b) - getHostMappingSpecificity(a));
-
-      for (const [key, value] of entries) {
-        if (hostMappingMatches(urlObj, key)) {
-          host = value;
+      for (const mapping of getSortedHostMappings(supportedHosts)) {
+        if (hostMappingMatches(urlObj, mapping)) {
+          host = mapping.value;
           break;
         }
       }
@@ -835,11 +901,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     try {
       const result = await chrome.storage.local.get(CONFIG.STORAGE_KEYS.RECENT_TABS);
       const allTabs = result[CONFIG.STORAGE_KEYS.RECENT_TABS] || [];
-      
-      // Filter out tabs older than 24 hours
-      const now = Date.now();
-      const twentyFourHoursAgo = now - (24 * 60 * 60 * 1000);
-      const validTabs = allTabs.filter(tab => tab.timestamp > twentyFourHoursAgo);
+      const validTabs = pruneRecentTabs(allTabs);
       
       // Update storage if we filtered out expired tabs
       if (validTabs.length !== allTabs.length) {
@@ -855,9 +917,38 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
     }
   }
 
+  function pruneRecentTabs(tabs, now = Date.now()) {
+    const cutoff = now - CONFIG.RECENT_TABS.MAX_AGE_MS;
+    const seenUrls = new Set();
+    const prunedTabs = [];
+
+    for (const tab of tabs || []) {
+      if (!tab?.url || !tab.timestamp || tab.timestamp <= cutoff || seenUrls.has(tab.url)) {
+        continue;
+      }
+
+      seenUrls.add(tab.url);
+      prunedTabs.push(tab);
+
+      if (prunedTabs.length >= CONFIG.RECENT_TABS.MAX_ITEMS) {
+        break;
+      }
+    }
+
+    return prunedTabs;
+  }
+
   async function addToRecentTabs(tab) {
     try {
+      const now = Date.now();
       const recentTabs = await getRecentTabs();
+      const currentFirst = recentTabs[0];
+      if (
+        currentFirst?.url === tab.url &&
+        now - currentFirst.timestamp < CONFIG.RECENT_TABS.WRITE_DEDUP_MS
+      ) {
+        return;
+      }
       
       // Remove existing entry if present (by URL instead of ID)
       const filteredTabs = recentTabs.filter(item => item.url !== tab.url);
@@ -868,16 +959,15 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         title: tab.title,
         url: tab.url,
         favicon: tab.favIconUrl,
-        timestamp: Date.now()
+        timestamp: now
       };
       
       filteredTabs.unshift(newEntry);
-      
-      // No limit on count - rely on 24h expiry for cleanup
+      const prunedTabs = pruneRecentTabs(filteredTabs, now);
       await chrome.storage.local.set({
-        [CONFIG.STORAGE_KEYS.RECENT_TABS]: filteredTabs
+        [CONFIG.STORAGE_KEYS.RECENT_TABS]: prunedTabs
       });
-      console.log('Internal addToRecentTabs: added', tab.title, 'total count:', filteredTabs.length);
+      console.log('Internal addToRecentTabs: added', tab.title, 'total count:', prunedTabs.length);
     } catch (error) {
       console.error('Error adding to recent tabs:', error);
     }
@@ -1938,8 +2028,10 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
 
     function displayGroupedTabs(groupedTabs, parentElement) {
       parentElement.innerHTML = '';
+      const renderState = limitGroupedTabsForRender(groupedTabs, CONFIG.UI.MAX_RENDERED_TABS);
+      const tabsToRender = renderState.groupedTabs;
       
-      if (Object.keys(groupedTabs).length === 0) {
+      if (Object.keys(tabsToRender).length === 0) {
         const emptyState = document.createElement('div');
         emptyState.className = 'empty-state';
         emptyState.innerHTML = `
@@ -1950,7 +2042,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         return;
       }
 
-      Object.keys(groupedTabs).forEach(host => {
+      Object.keys(tabsToRender).forEach(host => {
         const hostGroup = document.createElement('div');
         hostGroup.className = 'host-group';
         
@@ -1977,7 +2069,7 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
           tabsContainer.style.display = isExpanded ? 'block' : 'none';
         });
 
-        groupedTabs[host].forEach(tab => {
+        tabsToRender[host].forEach(tab => {
           const tabItem = document.createElement('div');
           tabItem.className = 'tab-item';
 
@@ -2109,6 +2201,17 @@ function tabGrouper(bookmarkTreeNodes, alltabs) {
         hostLi.appendChild(hostGroup);
         parentElement.appendChild(hostLi);
       });
+
+      if (renderState.truncated) {
+        const limitItem = document.createElement('li');
+        const limitNotice = document.createElement('div');
+        limitNotice.className = 'empty-state';
+        limitNotice.style.padding = '16px';
+        limitNotice.style.fontSize = '12px';
+        limitNotice.textContent = `Showing ${renderState.renderedTabs} of ${renderState.totalTabs} tabs. Type to narrow results.`;
+        limitItem.appendChild(limitNotice);
+        parentElement.appendChild(limitItem);
+      }
     }
 
     async function displaySidebarRecentTabs(parentElement, filteredTabs = null, searchQuery = null) {
